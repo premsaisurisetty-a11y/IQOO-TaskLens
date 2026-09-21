@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Task Lens — iQOO City Battles 2026 Qualifier Prototype</title>
+  <meta name="description" content="Task Lens: The Offline On-Device Expert Knowledge Capture & Hands-Free Execution System for iQOO 15">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Top Banner -->
+  <div class="top-banner">
+    <div class="top-banner-pill">
+      <span class="dot"></span>
+      iQOO City Battles 2026 • Official Qualifier Round Submission
+    </div>
+    <div style="display: flex; gap: 16px; align-items: center;">
+      <span>Target Device: iQOO 15 (Snapdragon 8 Elite)</span>
+      <span style="background: rgba(0,0,0,0.2); padding: 2px 8px; border-radius: 4px;">✈️ AIRPLANE MODE ONLY</span>
+    </div>
+  </div>
+
+  <!-- Navigation Bar -->
+  <nav class="navbar">
+    <div class="nav-container">
+      <div class="brand">
+        <span class="brand-badge">iQOO 2026</span>
+        <div class="brand-title">Task<span>Lens</span></div>
+      </div>
+      <ul class="nav-links">
+        <li><a href="#simulator" class="nav-link">Interactive Prototype</a></li>
+        <li><a href="#invariants" class="nav-link">4 Invariants</a></li>
+        <li><a href="#models" class="nav-link">6 On-Device Models</a></li>
+        <li><a href="#gallery" class="nav-link">Screen Gallery</a></li>
+        <li><a href="#robot" class="nav-link">Robot Sim</a></li>
+        <li><a href="#officekit" class="nav-link">Office Kit Log</a></li>
+      </ul>
+      <div class="nav-actions">
+        <a href="#simulator" class="btn btn-primary">Launch Simulator</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <header class="hero">
+    <div class="hero-grid">
+      <div class="hero-content">
+        <div class="hero-tagline-wrap">
+          <span>🏆</span>
+          <span>iQOO City Battles 2026 — 30-Hour Hackathon Prototype</span>
+        </div>
+        <h1 class="hero-title">
+          Expert Knowledge Capture.<br>
+          <span class="gradient-text">100% Offline. Zero Cloud.</span>
+        </h1>
+        <p class="hero-desc">
+          An expert does a job once and narrates it in <strong>Hindi or English</strong>. The phone turns that single take into a step-by-step guide — one photo and one slice of her own voice per step. Anyone else then runs the guide hands-free.
+          <strong>There is no <code>INTERNET</code> permission to revoke.</strong>
+        </p>
+        <div class="hero-badges">
+          <div class="hero-badge highlight-orange">
+            <span>🛡️</span> Zero INTERNET Permission
+          </div>
+          <div class="hero-badge highlight">
+            <span>⚡</span> 187 JVM Tests Passing
+          </div>
+          <div class="hero-badge">
+            <span>🧠</span> 6 On-Device AI Models
+          </div>
+          <div class="hero-badge">
+            <span>⏱️</span> &lt;10ms Mode Engine
+          </div>
+          <div class="hero-badge">
+            <span>🤖</span> PyBullet Robot Executable
+          </div>
+        </div>
+        <div class="hero-actions">
+          <a href="#simulator" class="btn btn-primary">Try Interactive Simulator ↓</a>
+          <a href="#invariants" class="btn btn-outline">Verify Jury Invariants</a>
+          <a href="#robot" class="btn btn-outline">Watch Robot Arm Sim</a>
+        </div>
+      </div>
+
+      <!-- Hero Visual / Proof Card -->
+      <div class="hero-visual">
+        <div class="metric-card" style="border: 1px solid rgba(255, 122, 0, 0.4); background: rgba(18, 20, 28, 0.9);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <span style="font-size: 0.75rem; font-weight: 800; color: var(--iqoo-orange); text-transform: uppercase;">
+              Android App-Info 4-Second Proof
+            </span>
+            <span class="net-zero-pill">NET: 0.0 KB/s</span>
+          </div>
+          <div style="font-family: var(--font-mono); font-size: 0.78rem; color: #a5b4fc; background: #0b0d14; padding: 14px; border-radius: 8px; line-height: 1.6;">
+            <div>$ adb shell pm dump com.tasklens | grep permission</div>
+            <div style="color: var(--status-green);">grantedPermissions:</div>
+            <div style="padding-left: 14px; color: #fff;">android.permission.CAMERA</div>
+            <div style="padding-left: 14px; color: #fff;">android.permission.RECORD_AUDIO</div>
+            <div style="color: var(--status-red); margin-top: 6px;">[STRIPPED VIA tools:node="remove"]</div>
+            <div style="padding-left: 14px; color: var(--text-dim); text-decoration: line-through;">android.permission.INTERNET</div>
+            <div style="padding-left: 14px; color: var(--text-dim); text-decoration: line-through;">android.permission.ACCESS_NETWORK_STATE</div>
+          </div>
+          <div style="margin-top: 14px; font-size: 0.8rem; color: var(--text-muted);">
+            Guaranteed by manifest merge rules. No network packet can physically leave the device.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Metrics Row -->
+    <div class="metrics-row">
+      <div class="metric-card">
+        <div class="metric-value">0 <span class="accent">PERM</span></div>
+        <div class="metric-label">Internet / Network</div>
+        <div class="metric-sub">Strict offline privacy</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value">187 <span class="accent">TESTS</span></div>
+        <div class="metric-label">Core Logic Verification</div>
+        <div class="metric-sub">100% JVM-testable in seconds</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value">&lt;10 <span class="accent">ms</span></div>
+        <div class="metric-label">Mode Engine Switch</div>
+        <div class="metric-sub">Rule table over 4 booleans</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value">100<span class="accent">%</span></div>
+        <div class="metric-label">On-Device Execution</div>
+        <div class="metric-sub">Vosk + Gemma 3 + MediaPipe</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ==========================================================================
+       Interactive Simulator Section (iQOO 15 Simulation)
+       ========================================================================== -->
+  <section id="simulator" class="simulator-section">
+    <div class="section-header">
+      <span class="section-badge">Live Prototype & Simulation</span>
+      <h2 class="section-title">Test Task Lens on the iQOO 15 Frame</h2>
+      <p class="section-desc">
+        Experience both sides of the product: <strong>Show Mode</strong> (expert records a take) and <strong>Guide Mode</strong> (hands-free execution with 7-signal sensor fusion).
+      </p>
+    </div>
+
+    <!-- Mode Switcher Tabs -->
+    <div class="sim-tabs-wrap">
+      <div class="sim-tabs">
+        <button class="sim-tab-btn active" data-tab="show">
+          <span>🎙️</span> Show Mode (Expert Recording)
+        </button>
+        <button class="sim-tab-btn" data-tab="player">
+          <span>📱</span> Guide Mode (Learner Player)
+        </button>
+        <button class="sim-tab-btn" data-tab="tuner">
+          <span>⚙️</span> Policy Tuner (Red Light)
+        </button>
+        <button class="sim-tab-btn" data-tab="robot">
+          <span>🦾</span> Robot Arm Sim
+        </button>
+      </div>
+    </div>
+
+    <!-- Simulator Body (Phone Frame + Real-Time Inspector) -->
+    <div class="sim-container">
+      
+      <!-- Phone Bezel -->
+      <div class="phone-bezel">
+        <div class="phone-camera"></div>
+        
+        <!-- Status Bar -->
+        <div class="phone-status-bar">
+          <div class="phone-status-left">
+            <span class="status-airplane-icon">✈️</span>
+            <span>AIRPLANE MODE</span>
+          </div>
+          <div class="phone-status-right">
+            <span class="net-zero-pill">0.0 KB/s</span>
+            <span>98% 🔋</span>
+            <span>12:45</span>
+          </div>
+        </div>
+
+        <!-- Phone Screen Container -->
+        <div class="phone-screen">
+          
+          <!-- App Bar -->
+          <div class="app-header">
+            <div class="app-brand">Task<span style="color: var(--iqoo-orange);">Lens</span></div>
+            <div id="appModeTag" class="app-mode-tag">SHOW MODE</div>
+          </div>
+
+          <!-- ==================== VIEW 1: SHOW MODE ==================== -->
+          <div id="showModeView" class="show-mode-view">
+            
+            <!-- Camera Preview Box -->
+            <div id="cameraPreviewBox" class="camera-preview-box">
+              <img src="assets/03-show-recording.jpg" alt="Recording bench" class="camera-canvas">
+              <div class="hud-overlay">
+                <span class="hud-badge green">● REC 16kHz PCM</span>
+                <span id="hudStepsCount" class="hud-badge orange">0 steps</span>
+              </div>
+            </div>
+
+            <!-- Audio Meter & Noise Floor Tracker -->
+            <div class="audio-meter-panel">
+              <div class="meter-header">
+                <span class="label">Adaptive Gate Level:</span>
+                <span id="liveDbVal" class="val">-52.0 dBFS</span>
+              </div>
+              <div class="db-bar-bg">
+                <div id="dbBarFill" class="db-bar-fill"></div>
+                <div id="noiseFloorMarker" class="noise-floor-marker" style="left: 12%;"></div>
+              </div>
+              <div style="display: flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-dim);">
+                <span>-60 dB (Quiet)</span>
+                <span id="noiseFloorVal" style="color: var(--status-green);">Floor: -53.0 dBFS</span>
+                <span>0 dB (Clipping)</span>
+              </div>
+              <canvas id="waveformCanvas" class="waveform-canvas" width="360" height="48" style="margin-top: 8px;"></canvas>
+            </div>
+
+            <!-- Live Speech & Pause Cut Stream -->
+            <div class="live-speech-box">
+              <div class="live-speech-title">
+                <span>Speech Transcript (Hindi/English)</span>
+                <span style="color: var(--iqoo-orange);">Pause Cut: 1200ms</span>
+              </div>
+              <div id="transcriptStream" class="transcript-stream">
+                Press "Start One-Take Recording" below to simulate an expert demonstrating a laptop back-panel opening in Hindi.
+              </div>
+            </div>
+
+            <!-- Show Mode Buttons -->
+            <div class="show-controls">
+              <button id="recordTakeBtn" class="record-btn">
+                <span>🎙️</span> Start One-Take Recording
+              </button>
+            </div>
+          </div>
+
+          <!-- ==================== VIEW 2: GUIDE / PLAYER MODE ==================== -->
+          <div id="playerModeView" class="player-mode-view" style="display: none;">
+            
+            <!-- Step Header & Mode Tag -->
+            <div class="player-step-header">
+              <span id="playerStepIndicator" class="step-indicator">STEP 1 OF 5</span>
+              <span id="playerModeChip" class="mode-chip mode-talk">TALK</span>
+            </div>
+
+            <!-- Visual Matcher View (Live Bench + Inset Reference Photo) -->
+            <div class="player-visual-panel">
+              <!-- Live bench background -->
+              <img src="assets/10-player-live.jpg" alt="Live bench view" class="bench-image">
+              
+              <!-- Real-Time Detection Bounding Boxes Container -->
+              <div id="bboxContainer"></div>
+
+              <!-- Inset Photo from Expert Guide -->
+              <img id="insetGuidePhoto" src="assets/08-player-step1.jpg" alt="Expert Guide Photo" class="inset-guide-photo">
+              <div class="inset-label">STEP PHOTO</div>
+
+              <!-- Scene Check Gauge Overlay -->
+              <div style="position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); padding: 3px 8px; border-radius: 4px; font-size: 0.68rem; font-family: var(--font-mono); border: 1px solid rgba(0, 230, 118, 0.4);">
+                <span>dHash Check: </span>
+                <span id="sceneSimilarityVal" style="color: var(--status-green); font-weight: 700;">86% MATCH</span>
+              </div>
+            </div>
+
+            <!-- Instruction Card -->
+            <div class="player-card">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <span class="provenance-tag prov-expert">PROVENANCE: EXPERT</span>
+                <span style="font-size: 0.65rem; color: var(--text-dim);">Hindi Voice Slice</span>
+              </div>
+              <div id="playerInstruction" class="player-instruction">
+                Undo the two screws at the bottom of the back panel using a Philips screwdriver.
+              </div>
+              <div id="playerTranscript" class="player-transcript">
+                "sabse pehle laptop ko ulta karo aur neeche ke do screw khol do"
+              </div>
+
+              <!-- Original Voice Playback Bar -->
+              <div class="audio-player-bar">
+                <button id="playVoiceBtn" class="play-voice-btn" title="Replay Expert Voice Slice">▶</button>
+                <div class="voice-meta">
+                  <div id="playerVoiceMeta" class="voice-badge">Neeche ke do screw khol do</div>
+                  <div style="font-size: 0.68rem; color: var(--text-dim);">Original expert audio take • PCM16 mono</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Player Step Navigation Controls -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: auto;">
+              <button id="stepPrevBtn" class="btn btn-outline" style="font-size: 0.78rem; padding: 8px;">
+                ← Prev Step
+              </button>
+              <button id="stepNextBtn" class="btn btn-primary" style="font-size: 0.78rem; padding: 8px;">
+                Next Step →
+              </button>
+            </div>
+
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ==================== RIGHT COLUMN: REAL-TIME SENSOR INSPECTOR & INTERACTIVE CONTROLS ==================== -->
+      <div class="sim-controls-panel">
+        
+        <!-- Live Sensor Telemetry (7 Signals) -->
+        <div class="inspector-card">
+          <div class="inspector-title">
+            <span>Live 7-Signal Sensor Fusion (iQOO 15)</span>
+            <span class="status-airplane-icon">● LIVE 10Hz</span>
+          </div>
+          <div class="signal-grid">
+            <div class="signal-box">
+              <div class="signal-name">1. Accel Variance</div>
+              <div id="signalVariance" class="signal-val green">0.012</div>
+            </div>
+            <div class="signal-box">
+              <div class="signal-name">2. Mic Noise Level</div>
+              <div id="signalDb" class="signal-val cyan">-48.0 dBFS</div>
+            </div>
+            <div class="signal-box">
+              <div class="signal-name">3. In-Hand Schmitt</div>
+              <div id="signalHeld" class="signal-val green">FLAT</div>
+            </div>
+            <div class="signal-box">
+              <div class="signal-name">4. Room-Loud Schmitt</div>
+              <div id="signalLoud" class="signal-val green">QUIET</div>
+            </div>
+            <div class="signal-box">
+              <div class="signal-name">5. Hand Gesture</div>
+              <div id="signalGesture" class="signal-val">NONE</div>
+            </div>
+            <div class="signal-box">
+              <div class="signal-name">6. Bench Match (dHash)</div>
+              <div id="signalSceneMatch" class="signal-val green">86%</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Interactive Environment Triggers -->
+        <div class="inspector-card">
+          <div class="inspector-title">
+            <span>Simulate Physical Interaction</span>
+          </div>
+          <div class="interactive-triggers">
+            <div class="trigger-btn-group">
+              <button id="toggleHeldBtn" class="trigger-btn">
+                📱 Flat on Table
+              </button>
+              <button id="toggleLoudBtn" class="trigger-btn">
+                🔇 Room Quiet (-48 dBFS)
+              </button>
+            </div>
+            <div class="trigger-btn-group">
+              <button id="toggleFarBtn" class="trigger-btn">
+                👤 User Near
+              </button>
+              <button id="toggleEasyBtn" class="trigger-btn">
+                ⚙️ Easy Mode (Off)
+              </button>
+            </div>
+            
+            <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 4px;">
+              Hands-Free Gesture Simulator (also mapped to Space / Backspace):
+            </div>
+            <div class="trigger-btn-group">
+              <button id="simPalmBtn" class="trigger-btn" style="border-color: rgba(0, 240, 255, 0.4); color: var(--cyber-cyan);">
+                ✋ Palm (Next Step)
+              </button>
+              <button id="simFistBtn" class="trigger-btn" style="border-color: rgba(255, 122, 0, 0.4); color: var(--iqoo-orange);">
+                ✊ Fist (Prev Step)
+              </button>
+            </div>
+          </div>
+
+          <!-- Mode Engine Live Reason Banner -->
+          <div style="margin-top: 14px;">
+            <div class="reason-box">
+              <span class="reason-tag">DECISION:</span>
+              <span id="engineReasonText">TALK &lt;- phone is flat (var 0.012)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Coach LLM Assistant (Gemma 3 1B with Provenance Grounding) -->
+        <div class="coach-box">
+          <div class="inspector-title">
+            <span>Coach AI (Gemma 3 1B int4 On-Device)</span>
+            <span class="chip-tag chip-gpu">GPU • OFFLINE</span>
+          </div>
+          <p style="font-size: 0.8rem; color: var(--text-muted);">
+            Ask any question. Answers are strictly grounded in the expert's words or visual facts, never hallucinated:
+          </p>
+          <div class="coach-chat-input-row">
+            <input id="coachQuestionInput" type="text" class="coach-input" placeholder="e.g. Which screwdriver? What about the ribbon cable?">
+            <button id="coachAskBtn" class="btn btn-primary" style="padding: 8px 14px;">Ask</button>
+          </div>
+          <div id="coachResponseBox" class="coach-response" style="display: none;"></div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ==========================================================================
+       The 4 Hard Constraints & Jury Invariants
+       ========================================================================== -->
+  <section id="invariants" class="invariants-section">
+    <div class="section-header">
+      <span class="section-badge">Jury Evaluation Claims</span>
+      <h2 class="section-title">The Four Non-Negotiable Invariants</h2>
+      <p class="section-desc">
+        These are product claims made to the iQOO hackathon jury. Breaking any one is worse than shipping less.
+      </p>
+    </div>
+
+    <div class="invariants-grid">
+      
+      <!-- Invariant 1 -->
+      <div class="invariant-card">
+        <div class="invariant-num">Constraint 01</div>
+        <h3 class="invariant-title">Zero INTERNET Permission</h3>
+        <p class="invariant-desc">
+          The AndroidManifest declares only <code>CAMERA</code> and <code>RECORD_AUDIO</code>. It explicitly removes <code>INTERNET</code> and <code>ACCESS_NETWORK_STATE</code> using <code>tools:node="remove"</code> so no merged transitive library can inject network access.
+        </p>
+        <div class="code-snippet">
+&lt;uses-permission android:name="android.permission.CAMERA" /&gt;
+&lt;uses-permission android:name="android.permission.RECORD_AUDIO" /&gt;
+&lt;!-- Stripped with tools:node="remove" --&gt;
+&lt;uses-permission android:name="android.permission.INTERNET" tools:node="remove" /&gt;
+&lt;uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" /&gt;
+        </div>
+      </div>
+
+      <!-- Invariant 2 -->
+      <div class="invariant-card">
+        <div class="invariant-num">Constraint 02</div>
+        <h3 class="invariant-title">Pause Detector + Word List (No Video ML)</h3>
+        <p class="invariant-desc">
+          The step cutter is a pure silence run detector (≥1200ms) cross-referenced with a Hindi/Marathi linking-word vocabulary (<em>phir, ab, uske baad</em>). It contains zero video models and runs in milliseconds on a five-year-old budget phone.
+        </p>
+        <div class="code-snippet">
+// PURE KOTLIN. ZERO android.* IMPORTS.
+val isPause = silenceDurationMs >= policy.pauseMs
+val hasLinkWord = linkWordConfirmer.confirms(windowWords)
+if (isPause || hasLinkWord) {
+    cutPoints.add(pauseMidpoint)
+}
+        </div>
+      </div>
+
+      <!-- Invariant 3 -->
+      <div class="invariant-card">
+        <div class="invariant-num">Constraint 03</div>
+        <h3 class="invariant-title">Mode Engine Contains Zero AI</h3>
+        <p class="invariant-desc">
+          Switching between <code>EASY</code>, <code>HANDS</code>, <code>TALK</code>, and <code>TAP</code> uses plain boolean logic over Schmitt triggers with a 400ms dwell latch. Decides in well under 10 milliseconds and guarantees zero UI flicker.
+        </p>
+        <div class="code-snippet">
+// Decides in &lt;1ms. Every decision carries an on-screen reason string.
+when {
+    inputs.easyMode -> ModeDecision(EASY, "EASY &lt;- user setting")
+    loud            -> ModeDecision(HANDS, "HANDS &lt;- room is loud ($db dBFS)")
+    !held           -> ModeDecision(TALK, "TALK &lt;- phone is flat")
+    else            -> ModeDecision(TAP, "TAP &lt;- held, quiet, close")
+}
+        </div>
+      </div>
+
+      <!-- Invariant 4 -->
+      <div class="invariant-card">
+        <div class="invariant-num">Constraint 04</div>
+        <h3 class="invariant-title">Warnings Advise, They Never Block</h3>
+        <p class="invariant-desc">
+          There is no disabled button in the entire app. Anything the phone cannot honestly measure (gloves, driving, user age, or task correctness) is left as a transparent setting, never an AI guess.
+        </p>
+        <div class="code-snippet">
+// No guess on whether work is "correct". 
+// Scene check yields honest dHash score; user always retains full override.
+val sceneDiff = SceneHash.hammingDistance(liveHash, stepPhotoHash)
+if (sceneDiff > policy.sceneAdviseThreshold) {
+    adviseWarning("Bench scene differs — hold steady or proceed")
+}
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ==========================================================================
+       6 On-Device Models & Hardware Map
+       ========================================================================== -->
+  <section id="models" class="models-section">
+    <div class="section-header">
+      <span class="section-badge">Edge AI Architecture</span>
+      <h2 class="section-title">The 6 On-Device Models on Snapdragon 8 Elite</h2>
+      <p class="section-desc">
+        A missing model is never replaced by a fake — <code>Fakes.kt</code> was deleted on purpose. Every model runs locally on the iQOO 15 hardware.
+      </p>
+    </div>
+
+    <div class="models-table-wrap">
+      <table class="models-table">
+        <thead>
+          <tr>
+            <th>Model</th>
+            <th>Job</th>
+            <th>Chip Target</th>
+            <th>If Model is Absent</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Vosk ASR</strong> (<code>vosk-android</code>)</td>
+            <td>Hindi and English speech recognition with per-word millisecond timings</td>
+            <td><span class="chip-tag chip-cpu">CPU</span></td>
+            <td>Empty transcripts; silence detector continues to slice steps</td>
+          </tr>
+          <tr>
+            <td><strong>Gemma 3 1B int4</strong> (<code>mediapipe-tasks-genai</code>)</td>
+            <td>Rewrites instructions to English, titles guide, answers learner questions</td>
+            <td><span class="chip-tag chip-gpu">GPU (OpenCL)</span></td>
+            <td>Steps stay in the expert's raw spoken words; no question answering</td>
+          </tr>
+          <tr>
+            <td><strong>Fine-Tuned Screw Detector</strong> (<code>tasks-vision</code>)</td>
+            <td>Detects screwdriver + 5 screw types (philips, pozidriv, torx, hex, square)</td>
+            <td><span class="chip-tag chip-npu">NPU / GPU</span></td>
+            <td>No tool bounding boxes; COCO still identifies generic workbench items</td>
+          </tr>
+          <tr>
+            <td><strong>COCO Object Detector</strong> (<code>tasks-vision</code>)</td>
+            <td>Identifies laptop, keyboard, mouse, person in the frame</td>
+            <td><span class="chip-tag chip-npu">NPU</span></td>
+            <td>Tool boxes still draw; workbench components go unnamed</td>
+          </tr>
+          <tr>
+            <td><strong>Gesture Recognizer</strong> (<code>tasks-vision</code>)</td>
+            <td>Palm (next step) and Fist (prev step) for hands-free navigation</td>
+            <td><span class="chip-tag chip-gpu">GPU</span></td>
+            <td>Gesture navigation disabled; on-screen buttons and speech still work</td>
+          </tr>
+          <tr>
+            <td><strong>Scene Check</strong> (Zero Model File)</td>
+            <td>Compares live camera bench against expert's step photo</td>
+            <td><span class="chip-tag chip-none">dHash + HSV</span></td>
+            <td>Never absent — pure algorithmic perceptual hash and color histogram</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ==========================================================================
+       Screen Gallery (10 High-Res Screenshots)
+       ========================================================================== -->
+  <section id="gallery" class="gallery-section">
+    <div class="section-header">
+      <span class="section-badge">Verified Android UI</span>
+      <h2 class="section-title">The Task Lens Loop in Ten Screens</h2>
+      <p class="section-desc">
+        Captured directly from the running iQOO 15 build. Click any screen to view full resolution.
+      </p>
+    </div>
+
+    <div class="gallery-grid">
+      <div class="gallery-card">
+        <div class="gallery-thumb-wrap">
+          <img src="assets/01-library.jpg" alt="Library screen" class="gallery-img">
+        </div>
+        <div class="gallery-info">
+          <div class="gallery-screen-num">Screen 01</div>
+          <div class="gallery-screen-title">Library</div>
+          <div class="gallery-screen-desc">One tap to start. Badge says 'No internet', and it is real.</div>
+        </div>
+      </div>
+
+      <div class="gallery-card">
+        <div class="gallery-thumb-wrap">
+          <img src="assets/02-show-ready.jpg" alt="Show ready screen" class="gallery-img">
+        </div>
+        <div class="gallery-info">
+          <div class="gallery-screen-num">Screen 02</div>
+          <div class="gallery-screen-title">Show Ready</div>
+          <div class="gallery-screen-desc">Language picker (Hindi/English). HUD shows NPU/CPU status.</div>
+        </div>
+      </div>
+
+      <div class="gallery-card">
+        <div class="gallery-thumb-wrap">
+          <img src="assets/03-show-recording.jpg" alt="Recording screen" class="gallery-img">
+        </div>
+        <div class="gallery-info">
+          <div class="gallery-screen-num">Screen 03</div>
+          <div class="gallery-screen-title">Show Recording</div>
+          <div class="gallery-screen-desc">Cuts at 1200ms quiet. Live noise floor gauge tracking room.</div>
+        </div>
+      </div>
+
+      <div class="gallery-card">
+        <div class="gallery-thumb-wrap">
+          <img src="assets/04-show-step2.jpg" alt="Show step 2 screen" class="gallery-img">
+        </div>
+        <div class="gallery-info">
+          <div class="gallery-screen-num">Screen 04</div>
+          <div class="gallery-screen-title">Step Boundary Grab</div>
+          <div class="gallery-screen-desc">Silence boundary grabs keyframe photo. Speech aligns live.</div>
+        </div>
+      </div>
+
+      <div class="gallery-card">
+        <div class="gallery-thumb-wrap">
+          <img src="assets/05-processing.jpg" alt="Processing screen" class="gallery-img">
+        </div>
+        <div class="gallery-info">
+          <div class="gallery-screen-num">Screen 05</div>
+          <div class="gallery-screen-title">On-Device Processing</div>
+          <div class="gallery-screen-desc">Six stages run locally on phone; zero data transmitted.</div>
+        </div>
+      </div>
+
+      <div class="gallery-card">
+        <div class="gallery-thumb-wrap">
+          <img src="assets/06-review.jpg" alt="Review screen" class="gallery-img">
+        </div>
+        <div class="gallery-info">
+          <div class="gallery-screen-num">Screen 06</div>
+          <div class="gallery-screen-title">Review & Verify</div>
+          <div class="gallery-screen-desc">Split, join, re-record. Expert taps 'This is right' to certify.</div>
+        </div>
+      </div>
+
+      <div class="gallery-card">
+        <div class="gallery-thumb-wrap">
+          <img src="assets/07-library-verified.jpg" alt="Verified library screen" class="gallery-img">
+        </div>
+        <div class="gallery-info">
+          <div class="gallery-screen-num">Screen 07</div>
+          <div class="gallery-screen-title">Verified Guide</div>
+          <div class="gallery-screen-desc">Green tick proves expert certified guide. Edits revoke tick.</div>
+        </div>
+      </div>
+
+      <div class="gallery-card">
+        <div class="gallery-thumb-wrap">
+          <img src="assets/08-player-step1.jpg" alt="Player step 1 screen" class="gallery-img">
+        </div>
+        <div class="gallery-info">
+          <div class="gallery-screen-num">Screen 08</div>
+          <div class="gallery-screen-title">Player: Step 1 of 5</div>
+          <div class="gallery-screen-desc">Original expert photo and voice slice. Mode chip: TAP.</div>
+        </div>
+      </div>
+
+      <div class="gallery-card">
+        <div class="gallery-thumb-wrap">
+          <img src="assets/09-player-step2.jpg" alt="Player step 2 screen" class="gallery-img">
+        </div>
+        <div class="gallery-info">
+          <div class="gallery-screen-num">Screen 09</div>
+          <div class="gallery-screen-title">Player: Step 2 of 5</div>
+          <div class="gallery-screen-desc">Warning on ribbon cable shown clearly with provenance badge.</div>
+        </div>
+      </div>
+
+      <div class="gallery-card">
+        <div class="gallery-thumb-wrap">
+          <img src="assets/10-player-live.jpg" alt="Live camera player" class="gallery-img">
+        </div>
+        <div class="gallery-info">
+          <div class="gallery-screen-num">Screen 10</div>
+          <div class="gallery-screen-title">Live Bench Match</div>
+          <div class="gallery-screen-desc">Live camera vs step photo. Honest dHash scene check feedback.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==========================================================================
+       Policy Engine Live Tuner (Red Light Hackathon Window)
+       ========================================================================== -->
+  <section id="policyTunerSection" class="simulator-section">
+    <div class="section-header">
+      <span class="section-badge">Zero-Compilation Architecture</span>
+      <h2 class="section-title">Tuning During Hackathon "Red Light" Windows</h2>
+      <p class="section-desc">
+        For 10.5 hours of the hackathon, compiling is forbidden. Task Lens reads every tunable parameter from <code>policy.json</code>, watched live with a <code>FileObserver</code>.
+      </p>
+    </div>
+
+    <div class="sim-container" style="grid-template-columns: 1fr 1fr; gap: 28px;">
+      <div class="inspector-card">
+        <div class="inspector-title">
+          <span>Live Parameters (assets/policy.json)</span>
+          <span style="color: var(--status-green); font-family: var(--font-mono); font-size: 0.75rem;">LIVE WATCHER</span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 18px; margin-top: 14px;">
+          <div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 6px;">
+              <span>Pause Threshold (pauseMs):</span>
+              <span id="valPauseMs" style="font-family: var(--font-mono); color: var(--iqoo-orange); font-weight: 700;">1200 ms</span>
+            </div>
+            <input id="tunerPauseMs" type="range" min="800" max="2500" step="50" value="1200" style="width: 100%;">
+          </div>
+
+          <div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 6px;">
+              <span>Mode Dwell Timer (dwellMs):</span>
+              <span id="valDwellMs" style="font-family: var(--font-mono); color: var(--cyber-cyan); font-weight: 700;">400 ms</span>
+            </div>
+            <input id="tunerDwellMs" type="range" min="150" max="1000" step="50" value="400" style="width: 100%;">
+          </div>
+
+          <div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 6px;">
+              <span>Speech Gate Margin (speechMarginDb):</span>
+              <span id="valMarginDb" style="font-family: var(--font-mono); color: var(--status-green); font-weight: 700;">9.0 dB</span>
+            </div>
+            <input id="tunerMarginDb" type="range" min="3.0" max="18.0" step="0.5" value="9.0" style="width: 100%;">
+          </div>
+
+          <button id="applyPolicyBtn" class="btn btn-primary" style="margin-top: 10px;">
+            ⚡ Push via Office Kit / adb (0 Recompiles)
+          </button>
+        </div>
+      </div>
+
+      <div class="inspector-card" style="background: #090b11;">
+        <div class="inspector-title">
+          <span>Terminal Proof: Live File Push</span>
+          <span class="net-zero-pill">HOT RELOAD</span>
+        </div>
+        <div class="code-snippet" style="height: 220px; color: #38bdf8;">
+$ adb push policy.json /data/local/tmp/
+policy.json: 1 file pushed, 0 skipped. 6.4 KB in 0.002s
+
+$ adb shell run-as com.tasklens cp /data/local/tmp/policy.json files/
+[TaskLens:PolicyRepo] FileObserver event: MODIFY policy.json
+[TaskLens:PolicyRepo] Parsed valid policy revision:
+  - pauseMs: 1200 -> updated
+  - dwellMs: 400 -> updated
+  - speechMarginDb: 9.0 -> updated
+[TaskLens:PolicyRepo] Applied without app restart. 0ms downtime.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==========================================================================
+       The Robot Simulation Layer
+       ========================================================================== -->
+  <section id="robot" class="robot-section">
+    <div class="section-header">
+      <span class="section-badge">Executable Knowledge</span>
+      <h2 class="section-title">A Guide is a Program: Robot Sim Proof</h2>
+      <p class="section-desc">
+        The ultimate proof of structured procedural knowledge: a Franka Panda robot arm reads <code>guide.json</code> and executes the repair in PyBullet simulation.
+      </p>
+    </div>
+
+    <div class="robot-grid">
+      <div>
+        <h3 style="font-size: 1.4rem; margin-bottom: 12px;">5 Robot Primitives from Human Narration</h3>
+        <p style="color: var(--text-muted); font-size: 0.95rem; line-height: 1.6;">
+          <code>tools/sim/guide_to_program.py</code> reads the expert guide JSON, maps normalized 2D camera detection bounding boxes to 3D tabletop coordinates, and translates action verbs into robot motion primitives:
+        </p>
+        <div class="primitive-badges">
+          <span class="primitive-pill">PICK</span>
+          <span class="primitive-pill">PLACE</span>
+          <span class="primitive-pill">PUSH</span>
+          <span class="primitive-pill">ALIGN</span>
+          <span class="primitive-pill">INSPECT</span>
+        </div>
+        <p style="font-size: 0.85rem; color: var(--text-dim); margin-top: 10px;">
+          Anything the translator cannot resolve confidently falls back to <strong>INSPECT</strong> — the arm hovers to view the workpiece without touching it. No guessed manipulations.
+        </p>
+        <div class="code-snippet" style="margin-top: 14px;">
+# Execution command
+python tools/sim/guide_to_program.py sample_guide.json -o program.json
+python tools/sim/run_pybullet.py program.json
+        </div>
+      </div>
+
+      <div class="robot-video-wrap">
+        <video class="robot-video" controls autoplay muted loop playsinline poster="assets/08-player-step1.jpg">
+          <source src="assets/tasklens-sim.mp4" type="video/mp4">
+          Your browser does not support HTML5 video.
+        </video>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==========================================================================
+       iQOO Office Kit & Hackathon 30-Hour Sprint
+       ========================================================================== -->
+  <section id="officekit" class="officekit-section">
+    <div class="section-header">
+      <span class="section-badge">10% Judged Score</span>
+      <h2 class="section-title">iQOO Office Kit Integration & HackTracker Log</h2>
+      <p class="section-desc">
+        Office Kit provides screen mirroring, file transfer, remote control, and shared clipboard. Verified by HackTracker hardware telemetry.
+      </p>
+    </div>
+
+    <div class="officekit-grid">
+      <div>
+        <h3 style="font-size: 1.2rem; margin-bottom: 10px;">Office Kit Hardware Utilization</h3>
+        <p style="color: var(--text-muted); font-size: 0.92rem; line-height: 1.6; margin-bottom: 16px;">
+          Rather than using cables, every model bundle (<code>coach.task</code>, <code>vosk-model</code>) and every tuning revision was transferred via Office Kit File Transfer, building genuine continuous device usage from hour one.
+        </p>
+        <div class="log-terminal">
+          <div class="terminal-header">
+            <span class="terminal-dot"></span>
+            <span class="terminal-dot"></span>
+            <span class="terminal-dot"></span>
+            <span>docs/officekit-log.md (HackTracker Verified)</span>
+          </div>
+          <div>Sat 11:20  file transfer  gesture_recognizer.task -> phone</div>
+          <div>Sat 11:34  file transfer  gemma-3n-e2b.task -> phone</div>
+          <div>Sat 13:05  screen mirror  on, 40 min, testing step cutter</div>
+          <div>Sat 17:12  file transfer  policy.json v4 -> phone</div>
+          <div>Sat 18:40  remote control laptop keyboard editing step wording</div>
+          <div>Sun 07:15  file transfer  guide_export_01.zip (4.2 MB)</div>
+        </div>
+      </div>
+
+      <div>
+        <h3 style="font-size: 1.2rem; margin-bottom: 10px;">The 30-Hour Sprint Architecture</h3>
+        <p style="color: var(--text-muted); font-size: 0.92rem; line-height: 1.6; margin-bottom: 16px;">
+          Strategic scheduling around compilation windows. Red Light is spent tuning and polishing without touching a compiler.
+        </p>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <div style="background: rgba(0, 230, 118, 0.1); border-left: 3px solid var(--status-green); padding: 8px 12px; border-radius: 4px; font-size: 0.8rem;">
+            <strong style="color: var(--status-green);">Sat 11:00–13:00 [GREEN]</strong> Sensor setup & models pushed to iQOO 15
+          </div>
+          <div style="background: rgba(255, 51, 102, 0.1); border-left: 3px solid var(--status-red); padding: 8px 12px; border-radius: 4px; font-size: 0.8rem;">
+            <strong style="color: var(--status-red);">Sat 13:00–15:30 [RED]</strong> Show Mode: audio buffer, live transcript, step cutter
+          </div>
+          <div style="background: rgba(255, 51, 102, 0.1); border-left: 3px solid var(--status-red); padding: 8px 12px; border-radius: 4px; font-size: 0.8rem;">
+            <strong style="color: var(--status-red);">Sat 16:30–19:00 [RED]</strong> Mode engine tuning via policy.json over Office Kit
+          </div>
+          <div style="background: rgba(0, 230, 118, 0.1); border-left: 3px solid var(--status-green); padding: 8px 12px; border-radius: 4px; font-size: 0.8rem;">
+            <strong style="color: var(--status-green);">Sun 01:00–06:30 [GREEN]</strong> Photo descriptions, stress tests, and sleep shifts
+          </div>
+          <div style="background: rgba(255, 51, 102, 0.1); border-left: 3px solid var(--status-red); padding: 8px 12px; border-radius: 4px; font-size: 0.8rem;">
+            <strong style="color: var(--status-red);">Sun 06:30–09:00 [RED]</strong> 5 real guides recorded in airplane mode for live jury demo
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-links">
+      <a href="#simulator">Simulator</a>
+      <a href="#invariants">Invariants</a>
+      <a href="#models">Models</a>
+      <a href="#robot">Robot Sim</a>
+      <a href="#officekit">Office Kit</a>
+    </div>
+    <p>
+      Task Lens • iQOO City Battles 2026 Qualifying Round Submission • Tested on iQOO 15 (Snapdragon 8 Elite)
+    </p>
+    <p style="margin-top: 6px; font-size: 0.78rem; color: #475569;">
+      All models run locally. Zero internet permissions. Invariants verified by 187 JVM tests.
+    </p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
