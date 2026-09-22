@@ -28,7 +28,7 @@ Built for iQOO City Battles 2026 — 30 hours, three people.
 
 | | | |
 |:--:|:--:|:--:|
-| <img src="docs/screenshots/07-library-verified.jpg" width="240"> | <img src="docs/screenshots/08-player-step1.jpg" width="240"> | <img src="docs/screenshots/10-player-live.jpg" width="240"> |
+| <img src="docs/screenshots/07-library-verified.png" width="240"> | <img src="docs/screenshots/08-player-step1.jpg" width="240"> | <img src="docs/screenshots/10-player-live.jpg" width="240"> |
 | **Verified.** The tick is an expert putting their name to a guide. Any edit costs the tick. | **Step 1 of 5.** The expert's photo, her own voice, and a mode chip saying *TAP — held, quiet, close*. | **Camera on.** The step's photo sits inset against the live bench, and the scene check says what it can honestly tell: *can't tell yet — hold the phone steady*. |
 
 ## The four hard constraints
