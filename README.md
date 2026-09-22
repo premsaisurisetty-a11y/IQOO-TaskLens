@@ -16,7 +16,7 @@ Built for iQOO City Battles 2026 — 30 hours, three people.
 
 | | | |
 |:--:|:--:|:--:|
-| <img src="docs/screenshots/01-library.jpg" width="240"> | <img src="docs/screenshots/02-show-ready.jpg" width="240"> | <img src="docs/screenshots/03-show-recording.jpg" width="240"> |
+| <img src= "https://github.com/user-attachments/assets/e71d4b11-34dc-4abb-ade2-69d0d44f310e" width="240"> | <img src="docs/screenshots/02-show-ready.jpg" width="240"> | <img src="docs/screenshots/03-show-recording.jpg" width="240"> |
 | **Library.** One tap to start. The badge says *No internet*, and it is not decoration. | **Ready.** Pick the language you will speak. The HUD already shows what is running and where — NPU or CPU. | **Recording.** `72 samples · cuts at 1200 ms of quiet`. The noise floor is live at −53 dB. |
 
 | | | |
