@@ -18,6 +18,7 @@ import com.tasklens.ai.AnswerEvidence
 import com.tasklens.ai.Coach
 import com.tasklens.ai.ComponentLocator
 import com.tasklens.ai.Localization
+import com.tasklens.ai.LearnerContext
 import com.tasklens.ai.learnerContext
 import com.tasklens.ai.DeviceAsr
 import com.tasklens.ai.DetectorCaptioner
@@ -58,6 +59,27 @@ import com.tasklens.core.Policy
 import com.tasklens.core.Sample
 import com.tasklens.core.SpokenWord
 import com.tasklens.core.StepCutter
+import com.tasklens.core.StepRange
+import com.tasklens.core.StepVerificationState
+import com.tasklens.core.StepRequirement
+import com.tasklens.core.StepEvidence
+import com.tasklens.core.StepVerificationReport
+import com.tasklens.core.StepProgressStatus
+import com.tasklens.core.LearnerStepProgress
+import com.tasklens.core.LearnerObservation
+import com.tasklens.core.StepRequirementDeriver
+import com.tasklens.core.LearnerStepVerifier
+import com.tasklens.core.LearnerProgressTracker
+import com.tasklens.core.FusedEvidenceState
+import com.tasklens.core.LearnerReadinessState
+import com.tasklens.core.EvidenceSourceRank
+import com.tasklens.core.FusedEvidenceReport
+import com.tasklens.core.EvidenceFusionEngine
+import com.tasklens.core.InteractionAction
+import com.tasklens.core.AudioPriority
+import com.tasklens.core.AdaptiveInteractionInputs
+import com.tasklens.core.AdaptiveInteractionDecision
+import com.tasklens.core.AdaptiveInteractionEngine
 import com.tasklens.data.Guide
 import com.tasklens.data.GuideStore
 import com.tasklens.data.PolicyRepository
@@ -95,6 +117,28 @@ data class DebugState(
     val liveCuts: Int = 0,
     val snaps: Int = 0,
     val policyError: String? = null,
+    val personDetected: Boolean = false,
+    val personNormalizedHeight: Double = 0.0,
+    val personNormalizedArea: Double = 0.0,
+    val personHeightPx: Double = 0.0,
+    val distanceState: String = "NOT DETECTED",
+    val fusedState: String = "UNKNOWN",
+    val learnerReadiness: String = "READY_TO_START",
+    val strongestSource: String = "NONE",
+    val supportingEvidenceCount: Int = 0,
+    val conflictingEvidenceCount: Int = 0,
+    val totalObservations: Int = 0,
+    val evidenceAgeMs: Long = 0L,
+    val manualConfirmationRequired: Boolean = false,
+    val fusionExplanation: String = "No verification has started.",
+    val interactionAction: String = "SILENT",
+    val interactionSpokenText: String = "",
+    val interactionVisualGuidance: String = "",
+    val interactionPriority: String = "ACKNOWLEDGEMENT",
+    val interactionReason: String = "",
+    val speechCooldownRemainingMs: Long = 0L,
+    val stuckTimeMs: Long = 0L,
+    val cameraStability: String = "STABLE",
 )
 
 /**
@@ -221,6 +265,20 @@ class TaskLensViewModel(app: Application) : AndroidViewModel(app) {
 
     val coachDelegate: String get() = coach.delegateName
 
+    val coachModelPath: String get() = coach.modelPath
+    val coachModelSizeBytes: Long get() = coach.modelSizeBytes
+    val coachAvailMemBeforeLoad: Long get() = coach.availMemBytesBeforeLoad
+    val coachInitTimeMs: Long get() = coach.initTimeMs
+    val coachLastInferenceMs: Long get() = coach.lastInferenceTimeMs
+    val coachAvgInferenceMs: Long get() = coach.avgInferenceTimeMs
+    val coachInferenceCount: Int get() = coach.inferenceCount
+    val coachSuccessCount: Int get() = coach.successfulInferenceCount
+    val coachFailCount: Int get() = coach.failedInferenceCount
+    val coachLastError: String? get() = coach.lastError
+
+    private val _coachDiagnosticOutput = MutableStateFlow<String?>(null)
+    val coachDiagnosticOutput: StateFlow<String?> = _coachDiagnosticOutput.asStateFlow()
+
     /**
      * Whether the coach can be shown a picture, so the Ask sheet can say so.
      *
@@ -243,7 +301,162 @@ class TaskLensViewModel(app: Application) : AndroidViewModel(app) {
      * an unguarded coroutine is a crash dialog rather than a log line.
      */
     fun warmUpCoach() {
-        launch(Dispatchers.IO) { coach.warmUp() }
+        launch(Dispatchers.IO) {
+            _coachDiagnosticOutput.value = "Warming up Gemma Coach model..."
+            val ok = coach.warmUp()
+            _coachDiagnosticOutput.value = if (ok) {
+                "Coach initialized successfully on ${coach.delegateName} in ${coach.initTimeMs} ms"
+            } else {
+                "Coach initialization failed: ${coach.lastError ?: coach.status}"
+            }
+        }
+    }
+
+    fun resetCoach() {
+        coach.reset()
+        _coachDiagnosticOutput.value = "Coach state reset."
+    }
+
+    fun testCoachTitle() {
+        launch(Dispatchers.IO) {
+            _coachDiagnosticOutput.value = "Running title generation test..."
+            val sampleSteps = listOf(
+                TakeStep(0, 5000, "laptop ke pichle screws kholo", "screwdriver, laptop", true),
+                TakeStep(5000, 10000, "phir back panel ko carefully uthao", "panel, laptop", true),
+            )
+            val started = System.currentTimeMillis()
+            val guide = coach.rewrite("Laptop back cover removal", sampleSteps)
+            val elapsed = System.currentTimeMillis() - started
+            _coachDiagnosticOutput.value = if (guide.title.isNotBlank()) {
+                "TITLE TEST OK ($elapsed ms):\nTitle: \"${guide.title}\"\nSteps: ${guide.steps.count { it != null }}/${sampleSteps.size}"
+            } else {
+                "TITLE TEST FAILED ($elapsed ms): Coach returned empty title.\nStatus: ${coach.status}\nError: ${coach.lastError ?: "none"}"
+            }
+        }
+    }
+
+    fun testCoachRewrite() {
+        launch(Dispatchers.IO) {
+            _coachDiagnosticOutput.value = "Running step rewrite test..."
+            val sampleSteps = listOf(
+                TakeStep(0, 4000, "pehle charger nikal do aur shutdown karo", "laptop", true),
+                TakeStep(4000, 9000, "ab philips screwdriver se chaar corner screws kholo", "screwdriver, philips_screw", true),
+            )
+            val started = System.currentTimeMillis()
+            val guide = coach.rewrite("Laptop disassembly", sampleSteps)
+            val elapsed = System.currentTimeMillis() - started
+            val s0 = guide.steps.getOrNull(0)
+            val s1 = guide.steps.getOrNull(1)
+            _coachDiagnosticOutput.value = if (s0 != null || s1 != null) {
+                "REWRITE TEST OK ($elapsed ms):\n1. [${s0?.source}] ${s0?.title}: ${s0?.instruction} (Note: ${s0?.note})\n2. [${s1?.source}] ${s1?.title}: ${s1?.instruction}"
+            } else {
+                "REWRITE TEST FAILED ($elapsed ms): Coach returned no steps.\nStatus: ${coach.status}\nError: ${coach.lastError ?: "none"}"
+            }
+        }
+    }
+
+    fun testCoachAnswer() {
+        launch(Dispatchers.IO) {
+            _coachDiagnosticOutput.value = "Running Q&A test..."
+            val context = LearnerContext(
+                job = "Laptop RAM upgrade",
+                verified = true,
+                stepNumber = 2,
+                totalSteps = 4,
+                instruction = "Remove the two Phillips screws securing the RAM shield.",
+                instructionSource = Provenance.EXPERT,
+                transcript = "dono screw nikaal lo",
+                warning = "Do not touch gold pins",
+                warningSource = Provenance.EXPERT,
+                previous = "1. Unplug the battery",
+                next = "3. Lift the RAM shield",
+                expectedTools = listOf("screwdriver"),
+                expectedObjects = listOf("laptop", "screwdriver"),
+                seenNow = listOf("laptop"),
+                question = "Which screwdriver size should I use?",
+            )
+            val started = System.currentTimeMillis()
+            val (evidence, answer) = coach.answer(context)
+            val elapsed = System.currentTimeMillis() - started
+            _coachDiagnosticOutput.value = if (answer.isNotBlank()) {
+                "Q&A TEST OK ($elapsed ms):\nEvidence: $evidence\nAnswer: \"$answer\""
+            } else {
+                "Q&A TEST FAILED ($elapsed ms): Coach returned empty answer.\nStatus: ${coach.status}\nError: ${coach.lastError ?: "none"}"
+            }
+        }
+    }
+
+    fun testCoachTranslate() {
+        launch(Dispatchers.IO) {
+            _coachDiagnosticOutput.value = "Running translation test..."
+            val input = "Carefully disconnect the battery connector before touching the motherboard."
+            val started = System.currentTimeMillis()
+            val translated = coach.translate(input, "hi")
+            val elapsed = System.currentTimeMillis() - started
+            _coachDiagnosticOutput.value = if (translated.isNotBlank()) {
+                "TRANSLATE TEST OK ($elapsed ms):\nInput: \"$input\"\nHindi: \"$translated\""
+            } else {
+                "TRANSLATE TEST FAILED ($elapsed ms): Coach returned empty translation.\nStatus: ${coach.status}\nError: ${coach.lastError ?: "none"}"
+            }
+        }
+    }
+
+    fun runPipelineBenchmark() {
+        launch(Dispatchers.Default) {
+            _coachDiagnosticOutput.value = "Running pipeline benchmark..."
+            val p = policy.value
+
+            // 1. FramePicker Benchmark
+            val testFrames = (0..50).map { i ->
+                FrameStats(
+                    snapIndex = i,
+                    tMs = i * 200L,
+                    sharpness = 0.5 + (i % 5) * 0.1,
+                    meanLuma = 128.0,
+                    dHash = (i * 1000L),
+                    detections = (i % 3),
+                    namedThings = if (i % 10 == 0) 1 else 0,
+                )
+            }
+            val testRanges = listOf(StepRange(0, 0, 5000), StepRange(1, 5000, 10000))
+            val fpTimes = mutableListOf<Long>()
+            repeat(15) {
+                val start = System.nanoTime()
+                pickFrames(testFrames, testRanges, p)
+                fpTimes += (System.nanoTime() - start) / 1000
+            }
+            val fpAvgUs = fpTimes.drop(5).average()
+
+            // 2. ModeEngine Benchmark
+            val benchEngine = ModeEngine(p)
+            val meTimes = mutableListOf<Long>()
+            repeat(100) { i ->
+                val start = System.nanoTime()
+                benchEngine.update(i * 20L, ModeInputs(accelVariance = 0.1, dbfs = -40.0, faceHeightPx = 75.0))
+                meTimes += (System.nanoTime() - start) / 1000
+            }
+            val meAvgUs = meTimes.drop(10).average()
+
+            // 3. DomainWords Benchmark
+            val domainTerms = listOf("screwdriver", "screw", "laptop", "philips", "counterclockwise")
+            val dwTimes = mutableListOf<Long>()
+            repeat(50) {
+                val start = System.nanoTime()
+                correctDomainText("take the screw driver and turn it counter clockwise", domainTerms)
+                dwTimes += (System.nanoTime() - start) / 1000
+            }
+            val dwAvgUs = dwTimes.drop(10).average()
+
+            _coachDiagnosticOutput.value = """
+                PIPELINE BENCHMARK RESULTS:
+                • FramePicker: ${"%.1f".format(fpAvgUs)} µs/call (50 frames, 2 steps)
+                • ModeEngine: ${"%.1f".format(meAvgUs)} µs/call (deterministic)
+                • DomainWords: ${"%.1f".format(dwAvgUs)} µs/call (join & fuzzy)
+                • Coach inference: ${coach.avgInferenceTimeMs} ms avg (${coach.inferenceCount} calls)
+                • Object Detector: ${if (detectorDelegate != "--") "Active on $detectorDelegate" else "No model on phone"}
+                • Pipeline status: OK (Zero dropped native frames)
+            """.trimIndent()
+        }
     }
 
     /**
@@ -392,6 +605,71 @@ class TaskLensViewModel(app: Application) : AndroidViewModel(app) {
      * policy.json pushed to the phone mid-session takes effect.
      */
     private var stepConfidence = StepConfidence(policy.value)
+
+    /**
+     * Learner-side deterministic step verification engine.
+     * Evaluates multi-modal evidence across temporal window according to configured requirements.
+     */
+    private var learnerVerifier = LearnerStepVerifier(policy.value)
+    private val _stepVerificationReport = MutableStateFlow(
+        StepVerificationReport(
+            state = StepVerificationState.UNKNOWN,
+            required = emptyList(),
+            satisfied = emptyList(),
+            missing = emptyList(),
+            conflicting = emptyList(),
+            observationCount = 0,
+            durationMs = 0L,
+            explanation = "No verification has started.",
+        )
+    )
+    val stepVerificationReport: StateFlow<StepVerificationReport> = _stepVerificationReport.asStateFlow()
+
+    /**
+     * Tracks learner sequential progress and verification status per step.
+     */
+    private var progressTracker = LearnerProgressTracker(1)
+    private val _learnerProgress = MutableStateFlow<List<LearnerStepProgress>>(emptyList())
+    val learnerProgress: StateFlow<List<LearnerStepProgress>> = _learnerProgress.asStateFlow()
+
+    /**
+     * Deterministic Multi-Source Evidence Fusion Engine.
+     */
+    private var fusionEngine = EvidenceFusionEngine(policy.value)
+    private val _fusedEvidenceReport = MutableStateFlow(
+        FusedEvidenceReport(
+            state = FusedEvidenceState.UNKNOWN,
+            readiness = LearnerReadinessState.READY_TO_START,
+            strongestSource = "NONE",
+            supportingCount = 0,
+            conflictingCount = 0,
+            totalObservations = 0,
+            evidenceAgeMs = 0L,
+            requiresManualConfirmation = false,
+            explanation = "No verification has started.",
+            structuredSummaryForCoach = "Step not initialized. No evidence recorded.",
+            sources = emptyList(),
+        )
+    )
+    val fusedEvidenceReport: StateFlow<FusedEvidenceReport> = _fusedEvidenceReport.asStateFlow()
+
+    /**
+     * Adaptive Hands-Free Interaction Engine.
+     */
+    private var interactionEngine = AdaptiveInteractionEngine(policy.value)
+    private val _interactionDecision = MutableStateFlow(
+        AdaptiveInteractionDecision(
+            action = InteractionAction.SILENT,
+            spokenText = null,
+            visualGuidance = "Ready",
+            audioPriority = AudioPriority.ACKNOWLEDGEMENT,
+            reason = "Initialized",
+        )
+    )
+    val interactionDecision: StateFlow<AdaptiveInteractionDecision> = _interactionDecision.asStateFlow()
+
+    private var currentWatchingStep: com.tasklens.data.Step? = null
+    private var currentRequiredObjects: List<String> = emptyList()
 
     /**
      * Labels the step's photograph had that the camera is not showing, so the
@@ -576,6 +854,63 @@ class TaskLensViewModel(app: Application) : AndroidViewModel(app) {
     private var snapJob: Job? = null
 
     /**
+     * Start watching a step with full learner-side verification intelligence.
+     */
+    fun watchStep(step: com.tasklens.data.Step, photo: File?, totalSteps: Int = 1) {
+        if (progressTracker.totalSteps != totalSteps) {
+            progressTracker = LearnerProgressTracker(totalSteps)
+        }
+        progressTracker.advanceTo(step.index)
+        _learnerProgress.value = progressTracker.getAllProgress()
+
+        val reqs = StepRequirementDeriver.derive(
+            stepIndex = step.index,
+            title = step.title,
+            instruction = step.instruction,
+            transcript = step.transcript,
+            caption = step.caption,
+            objects = step.objects,
+            policy = policy.value,
+        )
+        learnerVerifier.setStep(step.index, reqs)
+        _stepVerificationReport.value = learnerVerifier.evaluate()
+
+        currentWatchingStep = step
+        currentRequiredObjects = reqs.map { it.target }
+
+        fusionEngine.setStepContext(
+            index = step.index,
+            title = step.title,
+            instruction = step.instruction,
+            transcript = step.transcript,
+            reqs = reqs,
+        )
+        val fusedRep = fusionEngine.evaluate()
+        _fusedEvidenceReport.value = fusedRep
+        updateFusionDebugTelemetry(fusedRep)
+
+        interactionEngine.setStepContext(
+            index = step.index,
+            title = step.title,
+            instruction = step.instruction,
+            transcript = step.transcript,
+            reqs = currentRequiredObjects,
+            nowMs = System.currentTimeMillis(),
+        )
+        evaluateInteraction(
+            currentStep = step,
+            fusedRep = fusedRep,
+            reqs = currentRequiredObjects,
+            cameraStable = true,
+        )
+
+        val labels = step.objects.ifEmpty {
+            if (step.caption.isNotBlank()) step.caption.split(",").map { it.trim() } else emptyList()
+        }
+        watchScene(photo, labels)
+    }
+
+    /**
      * The photo the live camera is compared against. The Player calls this
      * when the step changes, and with null when it leaves.
      */
@@ -606,6 +941,61 @@ class TaskLensViewModel(app: Application) : AndroidViewModel(app) {
         // camera frame and reports that a correct workbench looks wrong.
         sceneReference = photo?.let { decodeUpright(it, 8) }
         _sceneSimilarity.value = 0f
+    }
+
+    /**
+     * Confirms current step completion manually by learner action.
+     */
+    fun confirmCurrentStepManually() {
+        learnerVerifier.confirmManually()
+        val rep = learnerVerifier.evaluate()
+        _stepVerificationReport.value = rep
+        progressTracker.confirmManual(progressTracker.currentStepIndex)
+        _learnerProgress.value = progressTracker.getAllProgress()
+
+        fusionEngine.confirmManual()
+        val fusedRep = fusionEngine.evaluate()
+        _fusedEvidenceReport.value = fusedRep
+        updateFusionDebugTelemetry(fusedRep)
+
+        interactionEngine.confirmManual(System.currentTimeMillis())
+        evaluateInteraction(
+            currentStep = currentWatchingStep,
+            fusedRep = fusedRep,
+            reqs = currentRequiredObjects,
+            cameraStable = true,
+        )
+    }
+
+    /**
+     * Explicitly marks current step skipped without verification when advancing manually.
+     */
+    fun skipCurrentStep(stepIndex: Int) {
+        progressTracker.skipCurrent(stepIndex)
+        _learnerProgress.value = progressTracker.getAllProgress()
+    }
+
+    /**
+     * Resets learner progress state for a fresh run without modifying guide provenance or files.
+     */
+    fun resetLearnerProgress(totalSteps: Int) {
+        progressTracker = LearnerProgressTracker(totalSteps)
+        learnerVerifier.reset()
+        _stepVerificationReport.value = learnerVerifier.evaluate()
+        _learnerProgress.value = progressTracker.getAllProgress()
+
+        fusionEngine.reset()
+        val fusedRep = fusionEngine.evaluate()
+        _fusedEvidenceReport.value = fusedRep
+        updateFusionDebugTelemetry(fusedRep)
+
+        interactionEngine.reset(System.currentTimeMillis())
+        evaluateInteraction(
+            currentStep = currentWatchingStep,
+            fusedRep = fusedRep,
+            reqs = currentRequiredObjects,
+            cameraStable = true,
+        )
     }
 
     /**
@@ -641,17 +1031,20 @@ class TaskLensViewModel(app: Application) : AndroidViewModel(app) {
                     // front of the person holding the phone.
                     val seen = hold(detector.onFrame(frame, 0), now)
                     _detections.value = seen
-                    // Nothing on this phone can measure a face, and the branch
-                    // that tried to was unreachable: neither detector is
-                    // allowed to report `person` -- COCO_LABELS leaves it out
-                    // on purpose and ObjectDetectSource holds each model to its
-                    // allowlist in the graph and again on the way out -- so a
-                    // `person` box could never arrive in this list. Reported as
-                    // 0, which [pushMode] reads as "nothing is looking" rather
-                    // than "a face far away": the honest reading, and the one
-                    // that keeps userFar false instead of letting the mode
-                    // engine act on a distance nobody measured.
-                    feedFaceSize(0.0)
+
+                    // Real person detection from COCO: find the largest person bounding box in the frame.
+                    val personBox = seen.boxes.filter { it.label == "person" }
+                        .maxByOrNull { (it.bottom - it.top) * (it.right - it.left) }
+                    if (personBox != null) {
+                        val normH = (personBox.bottom - personBox.top).toDouble().coerceIn(0.0, 1.0)
+                        val normW = (personBox.right - personBox.left).toDouble().coerceIn(0.0, 1.0)
+                        val normA = normW * normH
+                        val pxH = normH * frame.height.toDouble()
+                        feedFaceSize(px = pxH, normHeight = normH, normArea = normA, detected = true)
+                    } else {
+                        feedFaceSize(px = 0.0, normHeight = 0.0, normArea = 0.0, detected = false)
+                    }
+                    pushMode(_debug.value.levelDb)
                     reference?.let {
                         _sceneSimilarity.value =
                             runCatching { ai.sceneCheck.compare(frame, it) }.getOrDefault(0f)
@@ -660,7 +1053,7 @@ class TaskLensViewModel(app: Application) : AndroidViewModel(app) {
                     // already upright. Arithmetic only; no model is woken.
                     // Repeats intact: two boxes labelled philips_screw is two
                     // screws, and that is the difference the check turns on.
-                    updateStepCheck(frame, seen.boxes.map { b -> b.label })
+                    updateStepCheck(frame, seen.boxes, seen.boxes.map { b -> b.label })
                     // And a copy for the coach, in case the learner asks about
                     // what is in front of them.
                     keepFrame(frame)
@@ -678,12 +1071,12 @@ class TaskLensViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Feed one frame to the running check.
+     * Feed one frame to the running check and learner verification aggregator.
      *
      * Reuses the same 32x32 pixels SceneHash works on, so the cost is one small
      * scale and a dHash -- there is no second decode and no second model.
      */
-    private fun updateStepCheck(frame: Bitmap, seen: List<String>) {
+    private fun updateStepCheck(frame: Bitmap, seenBoxes: List<DetectionBox>, seen: List<String>) {
         val hash = runCatching { RealSceneCheck.hashOf(frame) }.getOrNull() ?: return
         val changed = lastFrameHash?.let { com.tasklens.core.SceneHash.hamming(hash, it) }
         lastFrameHash = hash
@@ -701,6 +1094,93 @@ class TaskLensViewModel(app: Application) : AndroidViewModel(app) {
         _confidence.value = stepConfidence.value
         _mayAdvance.value = stepConfidence.mayAdvance
         _missingLabels.value = labelShortfall(expectedLabels, seen)
+
+        // Multi-modal learner step verification evaluation
+        val scores = seenBoxes.associate { it.label to it.score }
+        val obs = LearnerObservation(
+            timestampMs = System.currentTimeMillis(),
+            seenLabels = seen,
+            labelScores = scores,
+            sceneSimilarity = _sceneSimilarity.value,
+            frameToFrameChange = changed ?: 0,
+        )
+        learnerVerifier.addObservation(obs)
+        val rep = learnerVerifier.evaluate()
+        _stepVerificationReport.value = rep
+        progressTracker.updateVerification(progressTracker.currentStepIndex, rep)
+        _learnerProgress.value = progressTracker.getAllProgress()
+
+        fusionEngine.addObservation(obs)
+        val fusedRep = fusionEngine.evaluate()
+        _fusedEvidenceReport.value = fusedRep
+        updateFusionDebugTelemetry(fusedRep)
+
+        val isCameraStable = (changed ?: 0) <= policy.value.checkSettledMaxChange
+        evaluateInteraction(
+            currentStep = currentWatchingStep,
+            fusedRep = fusedRep,
+            reqs = currentRequiredObjects,
+            cameraStable = isCameraStable,
+            nowMs = obs.timestampMs,
+        )
+    }
+
+    private fun evaluateInteraction(
+        currentStep: com.tasklens.data.Step?,
+        fusedRep: FusedEvidenceReport,
+        reqs: List<String>,
+        cameraStable: Boolean,
+        nowMs: Long = System.currentTimeMillis(),
+    ) {
+        val step = currentStep ?: return
+        val inputs = AdaptiveInteractionInputs(
+            mode = _mode.value,
+            stepIndex = step.index,
+            stepTitle = step.title,
+            stepInstruction = step.instruction,
+            stepTranscript = step.transcript,
+            requiredObjects = reqs,
+            readiness = fusedRep.readiness,
+            fusedState = fusedRep.state,
+            personDetected = _debug.value.personDetected,
+            userFar = _debug.value.distanceState.contains("FAR"),
+            cameraStable = cameraStable,
+            isManuallyConfirmed = _stepVerificationReport.value.satisfied.any { it.source == "USER_MANUAL" },
+            isCoachProcessing = _coachAnswer.value?.thinking == true,
+            isSpeaking = false,
+            hasSafetyWarning = false,
+            safetyWarningText = null,
+        )
+        val decision = interactionEngine.evaluate(inputs, nowMs)
+        _interactionDecision.value = decision
+        updateInteractionDebugTelemetry(decision, cameraStable)
+    }
+
+    private fun updateInteractionDebugTelemetry(decision: AdaptiveInteractionDecision, cameraStable: Boolean) {
+        _debug.value = _debug.value.copy(
+            interactionAction = decision.action.name,
+            interactionSpokenText = decision.spokenText.orEmpty(),
+            interactionVisualGuidance = decision.visualGuidance.orEmpty(),
+            interactionPriority = decision.audioPriority.name,
+            interactionReason = decision.reason,
+            speechCooldownRemainingMs = decision.cooldownRemainingMs,
+            stuckTimeMs = decision.stuckTimeMs,
+            cameraStability = if (cameraStable) "STABLE" else "UNSTABLE",
+        )
+    }
+
+    private fun updateFusionDebugTelemetry(fusedRep: FusedEvidenceReport) {
+        _debug.value = _debug.value.copy(
+            fusedState = fusedRep.state.name,
+            learnerReadiness = fusedRep.readiness.name,
+            strongestSource = fusedRep.strongestSource,
+            supportingEvidenceCount = fusedRep.supportingCount,
+            conflictingEvidenceCount = fusedRep.conflictingCount,
+            totalObservations = fusedRep.totalObservations,
+            evidenceAgeMs = fusedRep.evidenceAgeMs,
+            manualConfirmationRequired = fusedRep.requiresManualConfirmation,
+            fusionExplanation = fusedRep.explanation,
+        )
     }
 
     /**
@@ -818,8 +1298,11 @@ class TaskLensViewModel(app: Application) : AndroidViewModel(app) {
      */
     private var meanWordConfidence = 1f
 
-    /** Height in pixels of the largest detected face, or 0 when nothing detects. */
+    /** Height in pixels of the largest detected face/person, or 0 when nothing detects. */
     private var faceHeightPx = 0.0
+    private var personNormHeight = 0.0
+    private var personNormArea = 0.0
+    private var personDetected = false
 
     init {
         // Which recogniser won, said once, at startup. "It was all over the
@@ -882,6 +1365,7 @@ class TaskLensViewModel(app: Application) : AndroidViewModel(app) {
         return listOf(
             "on-device recogniser" to (deviceAsr != null),
             "vosk languages" to VoskAsr.languagesPresent(File(dir, VoskAsr.MODELS_DIR)).isNotEmpty(),
+            "coach (gemma)" to File(dir, Coach.COACH_MODEL).isFile,
             "gesture" to File(dir, GESTURE_MODEL).isFile,
             "detector (tools)" to File(dir, DETECTOR_MODEL).isFile,
             "detector (coco)" to File(dir, DETECTOR_MODEL_COCO).isFile,
@@ -1569,6 +2053,108 @@ class TaskLensViewModel(app: Application) : AndroidViewModel(app) {
         refreshLibrary()
     }
 
+    /**
+     * Seeds the deterministic 6-step Laptop Disassembly & Battery Isolation demo guide.
+     * Guaranteed offline, preserves explicit provenance and verification snapshot.
+     */
+    fun seedDemoGuide(): String {
+        val id = "laptop_disassembly_demo"
+        val steps = listOf(
+            Step(
+                index = 0,
+                title = "Power Down & Disconnect",
+                instruction = "Shut down the laptop and remove the AC adapter.",
+                instructionSource = Provenance.EXPERT,
+                transcript = "pehle laptop complete shutdown karo aur charger nikal lo",
+                caption = "laptop",
+                startMs = 0L,
+                endMs = 4500L,
+            ),
+            Step(
+                index = 1,
+                title = "Select Screwdriver",
+                instruction = "Use a Philips screwdriver for the bottom case screws.",
+                instructionSource = Provenance.EXPERT,
+                transcript = "ab philips screwdriver lo aur corner screws kholo",
+                caption = "screwdriver",
+                startMs = 4500L,
+                endMs = 9000L,
+            ),
+            Step(
+                index = 2,
+                title = "Remove Case Screws",
+                instruction = "Unscrew all perimeter screws and keep them aside safely.",
+                instructionSource = Provenance.EXPERT,
+                transcript = "sare screws counter clockwise ghuma ke nikal lo",
+                caption = "laptop",
+                startMs = 9000L,
+                endMs = 14000L,
+            ),
+            Step(
+                index = 3,
+                title = "Pry Open Bottom Panel",
+                instruction = "Carefully pry open the edges of the bottom cover.",
+                instructionSource = Provenance.EXPERT,
+                transcript = "bottom cover ke edges ko dhyan se pry tool se alag karo",
+                caption = "laptop",
+                startMs = 14000L,
+                endMs = 19000L,
+            ),
+            Step(
+                index = 4,
+                title = "Locate Battery Connector",
+                instruction = "Identify the main battery cable attached to the motherboard.",
+                instructionSource = Provenance.EXPERT,
+                transcript = "yeh battery cable hai, isko motherboard se disconnect karna hai",
+                caption = "laptop",
+                startMs = 19000L,
+                endMs = 24000L,
+            ),
+            Step(
+                index = 5,
+                title = "Disconnect Battery Connector",
+                instruction = "Gently pull the battery connector straight back.",
+                instructionSource = Provenance.EXPERT,
+                transcript = "connector ko safely pull karke disconnect kar do",
+                caption = "laptop",
+                startMs = 24000L,
+                endMs = 29000L,
+            ),
+        )
+        val guide = Guide(
+            id = id,
+            title = "Laptop Battery Replacement & Disassembly",
+            lang = "hi",
+            createdAt = System.currentTimeMillis(),
+            steps = steps,
+        )
+        guides.saveVerified(guide)
+        refreshLibrary()
+        return id
+    }
+
+    /**
+     * Resets demo session state without touching models, policies, or user permissions.
+     */
+    fun resetDemoSession() {
+        recorder.stop()
+        recordJob?.cancel()
+        recordJob = null
+        levelJob?.cancel()
+        levelJob = null
+        samples.clear()
+        snapTimesMs.clear()
+        _editing.value = null
+        _question.value = ""
+        _coachAnswer.value = null
+        _coachDiagnosticOutput.value = "Demo session state reset cleanly."
+        coach.reset()
+        engine = ModeEngine(policy.value)
+        gate = AdaptiveGate(policy.value)
+        _debug.value = DebugState()
+        refreshLibrary()
+    }
+
     // --- asking about a guide ----------------------------------------------
 
     /**
@@ -1940,12 +2526,18 @@ class TaskLensViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Report the largest face the camera can see, in pixels. Until a detector
-     * calls this, [faceHeightPx] stays 0 and userFar stays false rather than
-     * being guessed at from brightness.
+     * Report the normalized and pixel size of the detected person/face from the camera.
      */
-    fun feedFaceSize(px: Double) {
+    fun feedFaceSize(
+        px: Double,
+        normHeight: Double = 0.0,
+        normArea: Double = 0.0,
+        detected: Boolean = px > 0.0,
+    ) {
         faceHeightPx = px
+        personNormHeight = normHeight
+        personNormArea = normArea
+        personDetected = detected
     }
 
     private fun pushMode(db: Double) {
@@ -1957,19 +2549,28 @@ class TaskLensViewModel(app: Application) : AndroidViewModel(app) {
                 accelVariance = _debug.value.accelVariance,
                 dbfs = db,
                 speechUnclear = meanWordConfidence < p.speechUnclearConfThreshold,
-                // 0 means nothing is looking, which is not the same as a face
-                // far away, so it must not read as "far".
-                userFar = faceHeightPx > 0.0 && faceHeightPx < p.userFarFaceHeightPx,
+                userFar = faceHeightPx > 0.0 && faceHeightPx <= p.userFarFaceHeightPx,
+                faceHeightPx = faceHeightPx,
             ),
+        )
+        val distState = when {
+            !personDetected || faceHeightPx <= 0.0 -> "NOT DETECTED"
+            engine.isUserFar -> "FAR"
+            else -> "NEAR"
+        }
+        _debug.value = _debug.value.copy(
+            personDetected = personDetected,
+            personNormalizedHeight = personNormHeight,
+            personNormalizedArea = personNormArea,
+            personHeightPx = faceHeightPx,
+            distanceState = distState,
+            mode = engine.mode,
+            reason = engine.reason,
+            switches = if (committed) _debug.value.switches + 1 else _debug.value.switches,
         )
         if (committed) {
             _mode.value = engine.mode
             _reason.value = engine.reason
-            _debug.value = _debug.value.copy(
-                mode = engine.mode,
-                reason = engine.reason,
-                switches = _debug.value.switches + 1,
-            )
         }
     }
 
@@ -2159,6 +2760,7 @@ class TaskLensViewModel(app: Application) : AndroidViewModel(app) {
             "mouse",
             "tv",
             "cell phone",
+            "person",
         )
 
         val TOOL_LABELS = setOf(

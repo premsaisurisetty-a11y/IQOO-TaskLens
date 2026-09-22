@@ -33,6 +33,9 @@ import androidx.compose.ui.unit.sp
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
 import com.tasklens.ai.Detections
+import com.tasklens.core.Mode
+import com.tasklens.data.Guide
+import com.tasklens.data.Provenance
 import java.io.File
 
 /** The rounded chip the header rows are made of. Glass, like everything else. */
@@ -342,3 +345,153 @@ fun decodeUpright(file: File, sample: Int): Bitmap? {
         }
     }.getOrNull()
 }
+
+/**
+ * Visual pill clearly distinguishing knowledge sources.
+ * Never claims AI knowledge or 100% accuracy.
+ */
+@Composable
+fun ProvenancePill(source: Provenance, modifier: Modifier = Modifier) {
+    val (label, icon, color) = when (source) {
+        Provenance.EXPERT -> Triple("From expert demonstration", "✓", Ink.green)
+        Provenance.VISUAL -> Triple("Detected by camera", "▣", Ink.teal)
+        Provenance.GENERAL -> Triple("AI-generated general guidance", "✦", Ink.blue)
+        Provenance.UNKNOWN -> Triple("Not verified", "◦", Ink.amber)
+    }
+    Row(
+        modifier
+            .glass(CircleShape, tone = 1.2f)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(icon, style = MaterialTheme.typography.labelMedium, color = color, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.width(6.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall, color = Ink.text)
+    }
+}
+
+/**
+ * Prominent verification indicator for drafts, verified snapshots, and revoked edits.
+ */
+@Composable
+fun VerificationBadge(
+    verified: Boolean,
+    revoked: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
+    val (label, color) = when {
+        revoked -> "⚠ Verification revoked — changes require review" to Ink.amber
+        verified -> "✓ VERIFIED SNAPSHOT" to Ink.green
+        else -> "◦ DRAFT / UNVERIFIED" to Ink.dim
+    }
+    Row(
+        modifier
+            .glass(CircleShape, tone = if (verified) 1.35f else 1.1f)
+            .border(1.dp, color.copy(alpha = 0.6f), CircleShape)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = color, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/**
+ * Compact trust and evidence summary for guides.
+ */
+@Composable
+fun VerificationSummaryCard(guide: Guide, modifier: Modifier = Modifier) {
+    val expertCount = guide.steps.count { it.instructionSource == Provenance.EXPERT }
+    val visualCount = guide.steps.count { it.photo.isNotBlank() || it.objects.isNotEmpty() }
+    val unknownCount = guide.steps.count { it.instructionSource == Provenance.UNKNOWN }
+
+    Column(
+        modifier
+            .fillMaxWidth()
+            .glass(GlassShapeSmall, tone = 1.15f)
+            .padding(12.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Guide Trust Summary", style = MaterialTheme.typography.titleSmall, color = Ink.text)
+            VerificationBadge(guide.verified)
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text("${guide.steps.size} steps", style = Mono, color = Ink.dim)
+            Text("✓ $expertCount expert", style = Mono, color = Ink.green)
+            Text("▣ $visualCount visual", style = Mono, color = Ink.teal)
+            if (unknownCount > 0) {
+                Text("◦ $unknownCount unverified", style = Mono, color = Ink.amber)
+            }
+        }
+    }
+}
+
+/**
+ * 3-second Hackathon Demo HUD showing offline status, verified snapshot, and mode.
+ */
+@Composable
+fun DemoHud(
+    guide: Guide?,
+    currentStep: Int,
+    mode: Mode,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .glass(CircleShape, tone = 1.3f)
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("✈ OFFLINE · ON-DEVICE", style = Mono, color = Ink.dim)
+        }
+        if (guide != null) {
+            Text(
+                if (guide.verified) "✓ VERIFIED" else "◦ DRAFT",
+                style = Mono,
+                color = if (guide.verified) Ink.green else Ink.amber,
+            )
+            Text(
+                "STEP ${currentStep + 1}/${guide.steps.size}",
+                style = Mono,
+                color = Ink.text,
+            )
+        }
+        Text(
+            "MODE: ${mode.name}",
+            style = Mono,
+            color = when (mode) {
+                Mode.HANDS -> Ink.green
+                Mode.TALK -> Ink.teal
+                Mode.EASY -> Ink.amber
+                Mode.TAP -> Ink.blue
+            },
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+/**
+ * Human-readable explainability for mode transitions.
+ */
+fun explainModeReason(mode: Mode, rawReason: String): String {
+    val clean = rawReason.substringAfter("<-").trim()
+    return when {
+        clean.contains("far", ignoreCase = true) || mode == Mode.TALK -> "TALK — user is far from device (>1.5m)"
+        clean.contains("close", ignoreCase = true) || clean.contains("quiet", ignoreCase = true) || mode == Mode.TAP -> "TAP — user is close to phone in quiet room"
+        clean.contains("hands", ignoreCase = true) || clean.contains("rest", ignoreCase = true) || mode == Mode.HANDS -> "HANDS-FREE — phone resting on surface, hands-free work"
+        mode == Mode.EASY -> "EASY — simplified high-contrast interaction"
+        clean.isNotBlank() -> "${mode.name} — $clean"
+        else -> "${mode.name} — standard interaction mode"
+    }
+}
+

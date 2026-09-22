@@ -144,4 +144,138 @@ class ModeEngineTest {
         val perCallMs = (System.nanoTime() - start) / 1_000_000.0 / 1000.0
         assertTrue("mode decision took $perCallMs ms", perCallMs < 10.0)
     }
+
+    // --- Phase 7: User Far & Distance Hysteresis Tests ---
+
+    @Test
+    fun `user near produces TAP and is not far`() {
+        val e = ModeEngine()
+        e.settle(TAP_INPUTS.copy(faceHeightPx = 140.0))
+        assertEquals(Mode.TAP, e.mode)
+        assertFalse("user near should not be far", e.isUserFar)
+    }
+
+    @Test
+    fun `user far produces TALK when held in hand`() {
+        val e = ModeEngine()
+        e.settle(TAP_INPUTS.copy(faceHeightPx = 60.0))
+        assertEquals(Mode.TALK, e.mode)
+        assertTrue("user far should be true", e.isUserFar)
+        assertEquals("TALK <- user is far", e.reason)
+    }
+
+    @Test
+    fun `near to far transition requires clearing dwell time`() {
+        val e = ModeEngine()
+        var t = e.settle(TAP_INPUTS.copy(faceHeightPx = 140.0))
+        assertEquals(Mode.TAP, e.mode)
+
+        // 300ms of user far (100ms short of 400ms dwell)
+        val farInputs = TAP_INPUTS.copy(faceHeightPx = 60.0)
+        repeat(15) {
+            assertFalse("should not commit before dwell", e.update(t, farInputs))
+            t += 20
+        }
+        assertEquals(Mode.TAP, e.mode)
+
+        // After completing dwell, mode commits to TALK
+        e.settle(farInputs, t)
+        assertEquals(Mode.TALK, e.mode)
+        assertTrue(e.isUserFar)
+    }
+
+    @Test
+    fun `far to near transition requires clearing dwell time`() {
+        val e = ModeEngine()
+        var t = e.settle(TAP_INPUTS.copy(faceHeightPx = 60.0))
+        assertEquals(Mode.TALK, e.mode)
+        assertTrue(e.isUserFar)
+
+        // 300ms of user near
+        val nearInputs = TAP_INPUTS.copy(faceHeightPx = 140.0)
+        repeat(15) {
+            assertFalse("should not commit before dwell", e.update(t, nearInputs))
+            t += 20
+        }
+        assertEquals(Mode.TALK, e.mode)
+
+        // Complete dwell
+        e.settle(nearInputs, t)
+        assertEquals(Mode.TAP, e.mode)
+        assertFalse(e.isUserFar)
+    }
+
+    @Test
+    fun `user far schmitt hysteresis prevents flip on border values`() {
+        val e = ModeEngine()
+        // Start NEAR with 120px (> exit 100px)
+        var t = e.settle(TAP_INPUTS.copy(faceHeightPx = 120.0))
+        assertEquals(Mode.TAP, e.mode)
+        assertFalse(e.isUserFar)
+
+        // 90px is between 80px (enter) and 100px (exit) -> stays NEAR
+        repeat(50) {
+            e.update(t, TAP_INPUTS.copy(faceHeightPx = 90.0))
+            t += 20
+        }
+        assertFalse("should stay near on 90px from near", e.isUserFar)
+        assertEquals(Mode.TAP, e.mode)
+
+        // Now move FAR to 60px (<= 80px enter)
+        t = e.settle(TAP_INPUTS.copy(faceHeightPx = 60.0), t)
+        assertEquals(Mode.TALK, e.mode)
+        assertTrue(e.isUserFar)
+
+        // Now back to 90px -> stays FAR because 90px <= 100px (exit)
+        repeat(50) {
+            e.update(t, TAP_INPUTS.copy(faceHeightPx = 90.0))
+            t += 20
+        }
+        assertTrue("should stay far on 90px from far", e.isUserFar)
+        assertEquals(Mode.TALK, e.mode)
+    }
+
+    @Test
+    fun `no detection does not create fake far distance`() {
+        val e = ModeEngine()
+        // faceHeightPx = 0.0 means no person detected
+        e.settle(TAP_INPUTS.copy(faceHeightPx = 0.0, userFar = false))
+        assertEquals(Mode.TAP, e.mode)
+        assertFalse("no detection should not be userFar", e.isUserFar)
+    }
+
+    @Test
+    fun `boundary threshold behavior at exact enter and exit limits`() {
+        val e = ModeEngine()
+        // Exactly at enter threshold 80.0 px from NEAR triggers FAR (inclusive)
+        var t = e.settle(TAP_INPUTS.copy(faceHeightPx = 150.0))
+        assertEquals(Mode.TAP, e.mode)
+        t = e.settle(TAP_INPUTS.copy(faceHeightPx = 80.0), t)
+        assertTrue("80.0px is <= enter (80.0), must trigger FAR", e.isUserFar)
+        assertEquals(Mode.TALK, e.mode)
+
+        // Move to exactly at exit threshold 100.0 px from FAR stays FAR (exit is > 100.0)
+        t = e.settle(TAP_INPUTS.copy(faceHeightPx = 100.0), t)
+        assertTrue("100.0px is <= exit (100.0), must stay FAR", e.isUserFar)
+
+        // 100.1 px exits FAR
+        t = e.settle(TAP_INPUTS.copy(faceHeightPx = 100.1), t)
+        assertFalse("100.1px is > exit (100.0), must transition to NEAR", e.isUserFar)
+        assertEquals(Mode.TAP, e.mode)
+    }
+
+    @Test
+    fun `repeated near and far signals remain stable`() {
+        val e = ModeEngine()
+        var t = 0L
+        repeat(5) {
+            t = e.settle(TAP_INPUTS.copy(faceHeightPx = 50.0), t)
+            assertEquals(Mode.TALK, e.mode)
+            assertTrue(e.isUserFar)
+
+            t = e.settle(TAP_INPUTS.copy(faceHeightPx = 150.0), t)
+            assertEquals(Mode.TAP, e.mode)
+            assertFalse(e.isUserFar)
+        }
+    }
 }

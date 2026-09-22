@@ -156,6 +156,40 @@ class Coach(
     var delegateName: String = "--"
         private set
 
+    val modelPath: String get() = modelFile.absolutePath
+    val modelSizeBytes: Long get() = if (modelFile.isFile) modelFile.length() else 0L
+
+    @Volatile
+    var availMemBytesBeforeLoad: Long = 0L
+        private set
+
+    @Volatile
+    var initTimeMs: Long = 0L
+        private set
+
+    @Volatile
+    var lastInferenceTimeMs: Long = 0L
+        private set
+
+    @Volatile
+    var totalInferenceTimeMs: Long = 0L
+        private set
+
+    @Volatile
+    var inferenceCount: Int = 0
+        private set
+
+    @Volatile
+    var successfulInferenceCount: Int = 0
+        private set
+
+    @Volatile
+    var failedInferenceCount: Int = 0
+        private set
+
+    val avgInferenceTimeMs: Long
+        get() = if (successfulInferenceCount > 0) totalInferenceTimeMs / successfulInferenceCount else 0L
+
     /** True when there is a model to load at all. Cheap, so the UI can ask. */
     val present: Boolean get() = modelFile.isFile
 
@@ -183,8 +217,27 @@ class Coach(
             else -> "Not initialized (lazy)"
         }
 
+    /** Reset state to allow re-initialization attempt if files or conditions changed. */
+    fun reset() {
+        synchronized(this) {
+            runCatching { llm?.close() }
+            llm = null
+            dead = false
+            lowMemoryDetected = false
+            lastError = null
+            delegateName = "--"
+        }
+    }
+
     /** Pre-load the model engine down the backend ladder and report success. */
     suspend fun warmUp(): Boolean = withContext(Dispatchers.IO) {
+        synchronized(this@Coach) {
+            if (dead && llm == null) {
+                dead = false
+                lowMemoryDetected = false
+                lastError = null
+            }
+        }
         engine() != null
     }
 
@@ -437,10 +490,14 @@ class Coach(
                         session.addImage(BitmapImageBuilder(frame).build())
                         session.addQueryChunk(CLOSING)
                         val text = session.generateResponse()
+                        val duration = System.currentTimeMillis() - started
+                        lastInferenceTimeMs = duration
+                        totalInferenceTimeMs += duration
+                        inferenceCount++
+                        successfulInferenceCount++
                         Log.i(
                             TAG,
-                            "saw ${if (both) 2 else 1} image(s) and answered in " +
-                                "${System.currentTimeMillis() - started} ms",
+                            "saw ${if (both) 2 else 1} image(s) and answered in $duration ms",
                         )
                         text
                     }
@@ -545,16 +602,27 @@ class Coach(
     }
 
     private suspend fun generate(prompt: String): String = withContext(Dispatchers.IO) {
-        val engine = engine() ?: return@withContext ""
+        val engine = engine() ?: run {
+            failedInferenceCount++
+            return@withContext ""
+        }
         val started = System.currentTimeMillis()
-        oneAtATime.withLock { runCatching { engine.generateResponse(prompt) } }
-            .onSuccess { Log.i(TAG, "answered in ${System.currentTimeMillis() - started} ms") }
-            .getOrElse {
-                // Not fatal and not retried: a prompt that overflows the
-                // context throws here, and the next, shorter one will not.
-                Log.w(TAG, "generate failed", it)
-                ""
-            }
+        val result = oneAtATime.withLock { runCatching { engine.generateResponse(prompt) } }
+        val duration = System.currentTimeMillis() - started
+        lastInferenceTimeMs = duration
+        totalInferenceTimeMs += duration
+        inferenceCount++
+        result.onSuccess {
+            successfulInferenceCount++
+            Log.i(TAG, "answered in $duration ms")
+        }.getOrElse {
+            failedInferenceCount++
+            lastError = "Inference failed: ${it.message ?: it::class.simpleName}"
+            // Not fatal and not retried: a prompt that overflows the
+            // context throws here, and the next, shorter one will not.
+            Log.w(TAG, "generate failed", it)
+            ""
+        }
     }
 
     /** LOAD -> VERIFY -> INIT, once, down the backend ladder. Each fall logged. */
@@ -566,19 +634,18 @@ class Coach(
             if (dead) return null
             if (!modelFile.isFile) {
                 Log.w(TAG, "no coach model at $modelFile, the coach stays quiet")
-                dead = true
                 return null
             }
             val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
             if (am != null) {
                 val memInfo = ActivityManager.MemoryInfo()
                 am.getMemoryInfo(memInfo)
+                availMemBytesBeforeLoad = memInfo.availMem
                 val minMem = minAvailMemBytes()
                 if (memInfo.lowMemory || am.isLowRamDevice || memInfo.availMem < minMem) {
-                    Log.w(
-                        TAG,
-                        "insufficient memory for coach (${memInfo.availMem / (1024 * 1024)} MB available, required ${minMem / (1024 * 1024)} MB, lowMemory=${memInfo.lowMemory}), staying quiet to prevent OOM",
-                    )
+                    val msg = "insufficient memory for coach (${memInfo.availMem / (1024 * 1024)} MB available, required ${minMem / (1024 * 1024)} MB, lowMemory=${memInfo.lowMemory}), staying quiet to prevent OOM"
+                    Log.w(TAG, msg)
+                    lastError = msg
                     lowMemoryDetected = true
                     dead = true
                     return null
@@ -593,9 +660,12 @@ class Coach(
                     null
                 }
                 if (built != null) {
-                    Log.i(TAG, "coach on $backend in ${System.currentTimeMillis() - started} ms")
+                    val duration = System.currentTimeMillis() - started
+                    initTimeMs = duration
+                    Log.i(TAG, "coach on $backend in $duration ms")
                     delegateName = backend.name
                     llm = built
+                    lastError = null
                     return built
                 }
             }
@@ -763,6 +833,7 @@ internal fun parseTitle(raw: String): String {
     val line = raw.lineSequence().firstOrNull { it.contains("TITLE", ignoreCase = true) }
         ?: return ""
     val text = line.substringAfter('|', "")
+        .substringBefore('|')
         .trim()
         .trim('*', '#', '-', '"', '\'', ' ', '|')
     if (text.isBlank() || text.length > MAX_TITLE_CHARS) return ""

@@ -65,17 +65,107 @@ fun DebugScreen(vm: TaskLensViewModel) {
             Kv(name, if (there) "present" else "MISSING (falls back, never fakes)")
         }
         Kv("detector delegate", vm.detectorDelegate)
-        // Blank until the coach has been asked something: it loads lazily, so
-        // "--" here means "not yet used", not "failed".
-        Kv("coach backend", vm.coachDelegate)
+
+        HorizontalDivider(Modifier.padding(vertical = 12.dp))
+
+        Text("gemma ai coach telemetry", style = MaterialTheme.typography.titleSmall)
         Kv("coach model on phone", if (vm.coachPresent) "yes" else "NO -- coach is off")
+        Kv("model path", vm.coachModelPath)
+        Kv("model size", if (vm.coachModelSizeBytes > 0) "${vm.coachModelSizeBytes / (1024 * 1024)} MB" else "--")
+        Kv("avail ram before load", if (vm.coachAvailMemBeforeLoad > 0) "${vm.coachAvailMemBeforeLoad / (1024 * 1024)} MB" else "--")
         Kv("coach status", vm.coachStatus)
-        if (vm.coachPresent && vm.coachDelegate == "--") {
+        Kv("coach backend", vm.coachDelegate)
+        Kv("init time", if (vm.coachInitTimeMs > 0) "${vm.coachInitTimeMs} ms" else "--")
+        Kv("last inference", if (vm.coachLastInferenceMs > 0) "${vm.coachLastInferenceMs} ms" else "--")
+        Kv("avg inference", if (vm.coachAvgInferenceMs > 0) "${vm.coachAvgInferenceMs} ms" else "--")
+        Kv("inferences (ok / fail)", "${vm.coachSuccessCount} / ${vm.coachFailCount}")
+        vm.coachLastError?.let { Kv("last error", it) }
+
+        Row(
+            Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             Button(
                 onClick = { vm.warmUpCoach() },
-                modifier = Modifier.padding(vertical = 4.dp),
+                modifier = Modifier.weight(1f),
             ) {
-                Text("Warm Up / Test Coach")
+                Text("Warm Up / Retry")
+            }
+            Button(
+                onClick = { vm.resetCoach() },
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Reset Coach")
+            }
+        }
+
+        Text("live gemma inference tests", style = MaterialTheme.typography.labelMedium)
+        Row(
+            Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Button(
+                onClick = { vm.testCoachTitle() },
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Test Title (A)")
+            }
+            Button(
+                onClick = { vm.testCoachRewrite() },
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Test Rewrite (B)")
+            }
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Button(
+                onClick = { vm.testCoachAnswer() },
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Test Q&A (C)")
+            }
+            Button(
+                onClick = { vm.testCoachTranslate() },
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Test Translate (D)")
+            }
+        }
+
+        Button(
+            onClick = { vm.runPipelineBenchmark() },
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        ) {
+            Text("Run Full Pipeline Benchmark")
+        }
+
+        Row(
+            Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Button(
+                onClick = { vm.seedDemoGuide() },
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Seed Demo Guide")
+            }
+            Button(
+                onClick = { vm.resetDemoSession() },
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Reset Demo Session")
+            }
+        }
+
+        val diagOutput by vm.coachDiagnosticOutput.collectAsStateWithLifecycle()
+        diagOutput?.let { out ->
+            Box(
+                Modifier.fillMaxWidth().padding(vertical = 6.dp).glass(GlassShapeSmall, tone = 1.1f).padding(8.dp),
+            ) {
+                Text(out, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
             }
         }
 
@@ -84,6 +174,39 @@ fun DebugScreen(vm: TaskLensViewModel) {
         Kv("mode", d.mode.name)
         Kv("last switch", d.reason)
         Kv("switches", d.switches.toString())
+
+        HorizontalDivider(Modifier.padding(vertical = 12.dp))
+
+        Text("User Distance & Mode Telemetry", style = MaterialTheme.typography.titleSmall)
+        Kv("Person detected", if (d.personDetected) "YES" else "NO")
+        Kv("Normalized height", "${"%.3f".format(d.personNormalizedHeight)} (${d.personHeightPx.toInt()} px)")
+        Kv("Normalized area", "%.3f".format(d.personNormalizedArea))
+        Kv("Distance state", d.distanceState)
+        Kv("Near/Far thresholds", "${p.userFarEnterPx.toInt()} px (enter FAR) / ${p.userFarExitPx.toInt()} px (exit FAR)")
+        Kv("Dwell time", "${p.dwellMs} ms")
+
+        HorizontalDivider(Modifier.padding(vertical = 12.dp))
+
+        Text("Multi-Source Evidence Fusion Telemetry", style = MaterialTheme.typography.titleSmall)
+        Kv("Fused state", d.fusedState)
+        Kv("Learner readiness", d.learnerReadiness)
+        Kv("Strongest source", d.strongestSource)
+        Kv("Supporting / Conflicts", "${d.supportingEvidenceCount} / ${d.conflictingEvidenceCount}")
+        Kv("Observations / Age", "${d.totalObservations} / ${d.evidenceAgeMs} ms")
+        Kv("Manual required", if (d.manualConfirmationRequired) "YES" else "NO")
+        Kv("Explanation", d.fusionExplanation)
+
+        HorizontalDivider(Modifier.padding(vertical = 12.dp))
+
+        Text("Adaptive Interaction Telemetry", style = MaterialTheme.typography.titleSmall)
+        Kv("Interaction Action", d.interactionAction)
+        Kv("Audio Priority", d.interactionPriority)
+        Kv("Visual Guidance", d.interactionVisualGuidance.ifBlank { "None" })
+        Kv("Spoken Text", d.interactionSpokenText.ifBlank { "(Silent)" })
+        Kv("Action Reason", d.interactionReason)
+        Kv("Cooldown Remaining", "${d.speechCooldownRemainingMs} ms")
+        Kv("Stuck Duration", "${d.stuckTimeMs} ms")
+        Kv("Camera Stability", d.cameraStability)
 
         HorizontalDivider(Modifier.padding(vertical = 12.dp))
 

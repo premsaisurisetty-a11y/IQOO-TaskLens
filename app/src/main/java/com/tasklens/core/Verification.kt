@@ -245,3 +245,565 @@ private fun counts(labels: List<String>): Map<String, Int> =
 /** 0 at [lo], 1 at [hi], a straight line between. [hi] below [lo] runs downhill. */
 private fun ramp(v: Float, lo: Float, hi: Float): Float =
     if (lo == hi) (if (v >= hi) 1f else 0f) else ((v - lo) / (hi - lo)).coerceIn(0f, 1f)
+
+// =========================================================================
+// LEARNER-SIDE STEP VERIFICATION CONTRACT & INTELLIGENCE
+// =========================================================================
+
+/**
+ * Deterministic learner-side step verification state.
+ *
+ * "EVIDENCE, NOT GUESSING."
+ *
+ * UNKNOWN: No verification attempt yet.
+ * CHECKING: Evidence is currently being collected over temporal window.
+ * PASS: Available evidence satisfies the step's configured requirements.
+ * INSUFFICIENT_EVIDENCE: The system cannot determine completion (NOT failure).
+ * CONFLICT: Available signals disagree.
+ * MANUAL_CONFIRMATION: Action/component cannot be safely verified by on-device models.
+ */
+enum class StepVerificationState {
+    UNKNOWN,
+    CHECKING,
+    PASS,
+    INSUFFICIENT_EVIDENCE,
+    CONFLICT,
+    MANUAL_CONFIRMATION;
+
+    val isTerminalSuccess: Boolean get() = this == PASS
+}
+
+enum class RequirementType {
+    OBJECT_PRESENT,
+    OBJECT_COUNT,
+    SCENE_SIMILARITY,
+    SCENE_CHANGE,
+    DOMAIN_TERM,
+    MANUAL_CONFIRMATION,
+}
+
+enum class EvidenceType {
+    OBJECT_DETECTION,
+    SCENE_SIMILARITY,
+    SCENE_CHANGE,
+    OBJECT_COUNT,
+    DOMAIN_WORD,
+    USER_CONFIRMATION,
+    EXPERT_INSTRUCTION,
+}
+
+data class StepEvidence(
+    val source: String, // "EXPERT", "VISUAL", "USER_MANUAL", "SYSTEM"
+    val type: EvidenceType,
+    val confidence: Float,
+    val explanation: String,
+    val timestampMs: Long,
+    val stepIndex: Int = -1,
+)
+
+data class StepRequirement(
+    val type: RequirementType,
+    val target: String = "",
+    val expectedCount: Int = 1,
+    val minConfidence: Float = 0.3f,
+    val description: String = "",
+)
+
+data class StepVerificationReport(
+    val state: StepVerificationState,
+    val required: List<StepRequirement>,
+    val satisfied: List<StepEvidence>,
+    val missing: List<String>,
+    val conflicting: List<String>,
+    val observationCount: Int,
+    val durationMs: Long,
+    val explanation: String,
+)
+
+enum class StepProgressStatus {
+    PENDING,
+    IN_PROGRESS,
+    VERIFIED_COMPLETE,
+    MANUAL_COMPLETE,
+    SKIPPED_UNVERIFIED,
+}
+
+data class LearnerStepProgress(
+    val stepIndex: Int,
+    val status: StepProgressStatus,
+    val verificationState: StepVerificationState = StepVerificationState.UNKNOWN,
+    val lastReport: StepVerificationReport? = null,
+)
+
+data class LearnerObservation(
+    val timestampMs: Long,
+    val seenLabels: List<String> = emptyList(),
+    val labelScores: Map<String, Float> = emptyMap(),
+    val sceneSimilarity: Float = 0f,
+    val frameToFrameChange: Int = 0,
+    val isUserConfirmed: Boolean = false,
+)
+
+/**
+ * Derives realistic, honest requirements for a step without assuming models can see
+ * what they were never trained to detect.
+ */
+object StepRequirementDeriver {
+    fun derive(
+        stepIndex: Int,
+        title: String,
+        instruction: String,
+        transcript: String,
+        caption: String,
+        objects: List<String>,
+        policy: Policy = Policy.DEFAULT,
+    ): List<StepRequirement> {
+        val text = "$title $instruction $transcript $caption".lowercase()
+        val requirements = mutableListOf<StepRequirement>()
+
+        // 1. Check for tools/objects known to fine-tuned or COCO models
+        val knownDetectables = policy.componentAliases.filterValues { it.isNotEmpty() }.keys
+        val foundTools = knownDetectables.filter { text.contains(it) }
+
+        // 2. Check for unsupported components (e.g. battery connector, RAM, SSD, power cables)
+        val unsupportedItems = policy.componentAliases.filterValues { it.isEmpty() }.keys
+        val mentionsUnsupported = unsupportedItems.any { text.contains(it) } ||
+                text.contains("power down") ||
+                text.contains("disconnect") ||
+                text.contains("unplug") ||
+                text.contains("battery connector")
+
+        // 3. Action classifications
+        val mentionsRemoval = text.contains("remove") || text.contains("unscrew") || text.contains("undo")
+        val mentionsOpen = text.contains("open") || text.contains("take off") || text.contains("lift")
+
+        if (mentionsUnsupported && foundTools.isEmpty() && !mentionsOpen) {
+            requirements.add(
+                StepRequirement(
+                    type = RequirementType.MANUAL_CONFIRMATION,
+                    target = "manual_safety",
+                    description = "Step involves safety action or components not supported by on-device visual detector",
+                )
+            )
+            return requirements
+        }
+
+        if (foundTools.contains("screwdriver") || text.contains("screwdriver") || text.contains("pechkas")) {
+            val minScore = policy.detectLabelMinScore["screwdriver"] ?: policy.detectMinScore
+            requirements.add(
+                StepRequirement(
+                    type = RequirementType.OBJECT_PRESENT,
+                    target = "screwdriver",
+                    expectedCount = 1,
+                    minConfidence = minScore,
+                    description = "Required screwdriver present in workspace",
+                )
+            )
+        }
+
+        if (mentionsOpen) {
+            requirements.add(
+                StepRequirement(
+                    type = RequirementType.OBJECT_PRESENT,
+                    target = "laptop",
+                    expectedCount = 1,
+                    minConfidence = policy.detectMinScoreCoco,
+                    description = "Laptop present on workbench",
+                )
+            )
+            requirements.add(
+                StepRequirement(
+                    type = RequirementType.SCENE_CHANGE,
+                    target = "panel_state",
+                    description = "Structural scene change from opening panel",
+                )
+            )
+        } else if (mentionsRemoval) {
+            val screwLabels = policy.componentAliases["screw"] ?: emptyList()
+            if (screwLabels.isNotEmpty() && objects.any { it.contains("screw") }) {
+                requirements.add(
+                    StepRequirement(
+                        type = RequirementType.SCENE_CHANGE,
+                        target = "screw_state",
+                        description = "Scene state change after screw removal",
+                    )
+                )
+            } else {
+                // If fine-grained screw counting is unsupported on this hardware, require manual check
+                requirements.add(
+                    StepRequirement(
+                        type = RequirementType.MANUAL_CONFIRMATION,
+                        target = "screw_removal",
+                        description = "Physical screw removal confirmation",
+                    )
+                )
+            }
+        }
+
+        if (requirements.isEmpty()) {
+            // Default to requiring visual presence if objects exist, else manual confirmation
+            if (objects.isNotEmpty()) {
+                val primary = objects.first()
+                val minScore = policy.detectLabelMinScore[primary] ?: policy.detectMinScoreCoco
+                requirements.add(
+                    StepRequirement(
+                        type = RequirementType.OBJECT_PRESENT,
+                        target = primary,
+                        expectedCount = 1,
+                        minConfidence = minScore,
+                        description = "$primary detected in scene",
+                    )
+                )
+            } else {
+                requirements.add(
+                    StepRequirement(
+                        type = RequirementType.MANUAL_CONFIRMATION,
+                        target = "step_completion",
+                        description = "Manual completion confirmation required",
+                    )
+                )
+            }
+        }
+
+        return requirements
+    }
+}
+
+/**
+ * Deterministic evidence aggregator with sliding window temporal stability.
+ *
+ * Invariant: One-frame detection does not complete a step.
+ * Invariant: Absence is "Not detected in this observation", not "Object definitely absent".
+ * Invariant: Scene change alone does not equal semantic completion.
+ */
+class LearnerStepVerifier(
+    private val policy: Policy = Policy.DEFAULT,
+    private var requirements: List<StepRequirement> = emptyList(),
+) {
+    private val observations = mutableListOf<LearnerObservation>()
+    private var stepIndex: Int = 0
+    private var isManuallyConfirmed: Boolean = false
+
+    fun setStep(index: Int, reqs: List<StepRequirement>) {
+        stepIndex = index
+        requirements = reqs
+        reset()
+    }
+
+    fun reset() {
+        observations.clear()
+        isManuallyConfirmed = false
+    }
+
+    fun confirmManually() {
+        isManuallyConfirmed = true
+    }
+
+    fun addObservation(obs: LearnerObservation) {
+        // Prevent duplicate timestamps
+        if (observations.isNotEmpty() && observations.last().timestampMs == obs.timestampMs) {
+            return
+        }
+        observations.add(obs)
+
+        // Prune older than 3x sliding window to bound memory
+        val cutoff = obs.timestampMs - (policy.stepCheckWindowMs * 3)
+        observations.removeAll { it.timestampMs < cutoff }
+    }
+
+    fun evaluate(currentTimestampMs: Long = observations.lastOrNull()?.timestampMs ?: 0L): StepVerificationReport {
+        if (requirements.isEmpty()) {
+            return StepVerificationReport(
+                state = StepVerificationState.UNKNOWN,
+                required = emptyList(),
+                satisfied = emptyList(),
+                missing = emptyList(),
+                conflicting = emptyList(),
+                observationCount = 0,
+                durationMs = 0L,
+                explanation = "No verification has started.",
+            )
+        }
+
+        // Window filtering
+        val windowStart = currentTimestampMs - policy.stepCheckWindowMs
+        val windowObs = observations.filter { it.timestampMs in windowStart..currentTimestampMs }
+        val durationMs = if (windowObs.size >= 2) windowObs.last().timestampMs - windowObs.first().timestampMs else 0L
+
+        val satisfied = mutableListOf<StepEvidence>()
+        val missing = mutableListOf<String>()
+        val conflicting = mutableListOf<String>()
+
+        // 1. Check if explicit manual confirmation is configured
+        val requiresManual = requirements.any { it.type == RequirementType.MANUAL_CONFIRMATION }
+
+        if (isManuallyConfirmed) {
+            satisfied.add(
+                StepEvidence(
+                    source = "USER_MANUAL",
+                    type = EvidenceType.USER_CONFIRMATION,
+                    confidence = 1.0f,
+                    explanation = "Learner confirmed step completion manually.",
+                    timestampMs = currentTimestampMs,
+                    stepIndex = stepIndex,
+                )
+            )
+            return StepVerificationReport(
+                state = StepVerificationState.PASS,
+                required = requirements,
+                satisfied = satisfied,
+                missing = emptyList(),
+                conflicting = emptyList(),
+                observationCount = windowObs.size,
+                durationMs = durationMs,
+                explanation = "Step verified via learner manual confirmation.",
+            )
+        }
+
+        if (requiresManual) {
+            return StepVerificationReport(
+                state = StepVerificationState.MANUAL_CONFIRMATION,
+                required = requirements,
+                satisfied = emptyList(),
+                missing = listOf("Manual learner confirmation required"),
+                conflicting = emptyList(),
+                observationCount = windowObs.size,
+                durationMs = durationMs,
+                explanation = "This action cannot be safely verified automatically.",
+            )
+        }
+
+        // Not enough temporal observations yet
+        if (windowObs.size < policy.stepCheckMinObservations) {
+            return StepVerificationReport(
+                state = if (windowObs.isEmpty()) StepVerificationState.UNKNOWN else StepVerificationState.CHECKING,
+                required = requirements,
+                satisfied = emptyList(),
+                missing = listOf("Gathering observations (${windowObs.size}/${policy.stepCheckMinObservations})"),
+                conflicting = emptyList(),
+                observationCount = windowObs.size,
+                durationMs = durationMs,
+                explanation = "Collecting observations across temporal window...",
+            )
+        }
+
+        // Evaluate each requirement over window observations
+        for (req in requirements) {
+            when (req.type) {
+                RequirementType.OBJECT_PRESENT -> {
+                    var matchingCount = 0
+                    var maxScore = 0f
+                    for (obs in windowObs) {
+                        val score = obs.labelScores[req.target] ?: (if (obs.seenLabels.contains(req.target)) 1.0f else 0.0f)
+                        if (score >= req.minConfidence) {
+                            matchingCount++
+                            if (score > maxScore) maxScore = score
+                        }
+                    }
+                    val consistency = matchingCount.toDouble() / windowObs.size
+                    if (consistency >= policy.stepCheckRequiredConsistency) {
+                        satisfied.add(
+                            StepEvidence(
+                                source = "VISUAL",
+                                type = EvidenceType.OBJECT_DETECTION,
+                                confidence = maxScore,
+                                explanation = "Required ${req.target} detected consistently (${(consistency * 100).toInt()}% of frames).",
+                                timestampMs = currentTimestampMs,
+                                stepIndex = stepIndex,
+                            )
+                        )
+                    } else if (matchingCount > 0) {
+                        conflicting.add("${req.target} detected intermittently (consistency ${(consistency * 100).toInt()}% < ${(policy.stepCheckRequiredConsistency * 100).toInt()}%)")
+                    } else {
+                        missing.add("${req.target} not detected in current observations")
+                    }
+                }
+                RequirementType.SCENE_CHANGE -> {
+                    val initialObs = windowObs.first()
+                    val latestObs = windowObs.last()
+                    val changeBits = latestObs.frameToFrameChange
+                    if (changeBits >= policy.checkSettledMaxChange / 2) {
+                        satisfied.add(
+                            StepEvidence(
+                                source = "VISUAL",
+                                type = EvidenceType.SCENE_CHANGE,
+                                confidence = 0.8f,
+                                explanation = "Scene changed sufficiently.",
+                                timestampMs = currentTimestampMs,
+                                stepIndex = stepIndex,
+                            )
+                        )
+                    } else {
+                        missing.add("Scene change not yet observed")
+                    }
+                }
+                RequirementType.SCENE_SIMILARITY -> {
+                    val avgSim = windowObs.map { it.sceneSimilarity }.average().toFloat()
+                    if (avgSim >= policy.checkCorrectSimilarity) {
+                        satisfied.add(
+                            StepEvidence(
+                                source = "VISUAL",
+                                type = EvidenceType.SCENE_SIMILARITY,
+                                confidence = avgSim,
+                                explanation = "Workbench scene matches reference photograph.",
+                                timestampMs = currentTimestampMs,
+                                stepIndex = stepIndex,
+                            )
+                        )
+                    } else {
+                        missing.add("Scene similarity (${(avgSim * 100).toInt()}%) below required (${(policy.checkCorrectSimilarity * 100).toInt()}%)")
+                    }
+                }
+                RequirementType.OBJECT_COUNT -> {
+                    var countMet = 0
+                    for (obs in windowObs) {
+                        val count = obs.seenLabels.count { it == req.target }
+                        if (count >= req.expectedCount) countMet++
+                    }
+                    val consistency = countMet.toDouble() / windowObs.size
+                    if (consistency >= policy.stepCheckRequiredConsistency) {
+                        satisfied.add(
+                            StepEvidence(
+                                source = "VISUAL",
+                                type = EvidenceType.OBJECT_COUNT,
+                                confidence = 0.9f,
+                                explanation = "Count of ${req.target} (${req.expectedCount}) confirmed consistently.",
+                                timestampMs = currentTimestampMs,
+                                stepIndex = stepIndex,
+                            )
+                        )
+                    } else {
+                        missing.add("Required count of ${req.target} not observed consistently")
+                    }
+                }
+                RequirementType.DOMAIN_TERM -> {
+                    satisfied.add(
+                        StepEvidence(
+                            source = "EXPERT",
+                            type = EvidenceType.DOMAIN_WORD,
+                            confidence = 0.9f,
+                            explanation = "Domain term '${req.target}' present in expert instructions.",
+                            timestampMs = currentTimestampMs,
+                            stepIndex = stepIndex,
+                        )
+                    )
+                }
+                RequirementType.MANUAL_CONFIRMATION -> {
+                    missing.add("Manual confirmation required")
+                }
+            }
+        }
+
+        val state = when {
+            conflicting.isNotEmpty() -> StepVerificationState.CONFLICT
+            missing.isEmpty() && satisfied.size >= requirements.size -> StepVerificationState.PASS
+            satisfied.isNotEmpty() && missing.isNotEmpty() -> StepVerificationState.INSUFFICIENT_EVIDENCE
+            else -> StepVerificationState.INSUFFICIENT_EVIDENCE
+        }
+
+        val explanation = when (state) {
+            StepVerificationState.PASS -> satisfied.firstOrNull()?.explanation ?: "Step appears complete."
+            StepVerificationState.CONFLICT -> "Camera evidence changed while the required object was not detected consistently."
+            StepVerificationState.INSUFFICIENT_EVIDENCE -> {
+                if (satisfied.isNotEmpty()) {
+                    "I can see ${satisfied.first().explanation.substringBefore(".")}, but ${missing.firstOrNull() ?: "action cannot be confirmed"}."
+                } else {
+                    "Not enough evidence to confirm step completion."
+                }
+            }
+            StepVerificationState.MANUAL_CONFIRMATION -> "This action cannot be safely verified automatically."
+            StepVerificationState.CHECKING -> "Collecting observations..."
+            StepVerificationState.UNKNOWN -> "No verification has started."
+        }
+
+        return StepVerificationReport(
+            state = state,
+            required = requirements,
+            satisfied = satisfied,
+            missing = missing,
+            conflicting = conflicting,
+            observationCount = windowObs.size,
+            durationMs = durationMs,
+            explanation = explanation,
+        )
+    }
+}
+
+/**
+ * Tracks sequential progress of a learner through a guide without silently skipping.
+ */
+class LearnerProgressTracker(val totalSteps: Int) {
+    private val steps = Array(totalSteps.coerceAtLeast(1)) { idx ->
+        LearnerStepProgress(
+            stepIndex = idx,
+            status = if (idx == 0) StepProgressStatus.IN_PROGRESS else StepProgressStatus.PENDING,
+        )
+    }
+
+    var currentStepIndex: Int = 0
+        private set
+
+    fun getProgress(stepIndex: Int): LearnerStepProgress? = steps.getOrNull(stepIndex)
+
+    fun getAllProgress(): List<LearnerStepProgress> = steps.toList()
+
+    fun updateVerification(stepIndex: Int, report: StepVerificationReport) {
+        if (stepIndex !in steps.indices) return
+        val current = steps[stepIndex]
+        val newStatus = if (report.state == StepVerificationState.PASS) {
+            StepProgressStatus.VERIFIED_COMPLETE
+        } else {
+            if (current.status == StepProgressStatus.VERIFIED_COMPLETE || current.status == StepProgressStatus.MANUAL_COMPLETE) {
+                current.status
+            } else {
+                StepProgressStatus.IN_PROGRESS
+            }
+        }
+        steps[stepIndex] = current.copy(
+            verificationState = report.state,
+            status = newStatus,
+            lastReport = report,
+        )
+    }
+
+    fun confirmManual(stepIndex: Int) {
+        if (stepIndex !in steps.indices) return
+        steps[stepIndex] = steps[stepIndex].copy(
+            status = StepProgressStatus.MANUAL_COMPLETE,
+            verificationState = StepVerificationState.PASS,
+        )
+    }
+
+    fun skipCurrent(stepIndex: Int) {
+        if (stepIndex !in steps.indices) return
+        if (steps[stepIndex].status != StepProgressStatus.VERIFIED_COMPLETE &&
+            steps[stepIndex].status != StepProgressStatus.MANUAL_COMPLETE
+        ) {
+            steps[stepIndex] = steps[stepIndex].copy(
+                status = StepProgressStatus.SKIPPED_UNVERIFIED,
+            )
+        }
+    }
+
+    fun advanceTo(nextIndex: Int) {
+        if (nextIndex in steps.indices) {
+            skipCurrent(currentStepIndex)
+            currentStepIndex = nextIndex
+            if (steps[currentStepIndex].status == StepProgressStatus.PENDING) {
+                steps[currentStepIndex] = steps[currentStepIndex].copy(status = StepProgressStatus.IN_PROGRESS)
+            }
+        }
+    }
+
+    fun reset() {
+        currentStepIndex = 0
+        for (i in steps.indices) {
+            steps[i] = LearnerStepProgress(
+                stepIndex = i,
+                status = if (i == 0) StepProgressStatus.IN_PROGRESS else StepProgressStatus.PENDING,
+                verificationState = StepVerificationState.UNKNOWN,
+                lastReport = null,
+            )
+        }
+    }
+}

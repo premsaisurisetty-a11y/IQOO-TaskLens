@@ -15,6 +15,9 @@
     "speechUnclearConfThreshold": 0.55,
     "speechUnclearWindowWords": 12,
     "userFarFaceHeightPx": 90.0,
+    "userFarEnterPx": 80.0,
+    "userFarExitPx": 100.0,
+    "userFarMinConfidence": 0.4,
     "detectMinScore": 0.3,
     "detectMinScoreCoco": 0.5,
     "detectLabelMinScore": {

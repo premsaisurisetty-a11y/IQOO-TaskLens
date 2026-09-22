@@ -65,6 +65,8 @@ fun LibraryScreen(vm: TaskLensViewModel) {
                 SettingsPanel(
                     easy = easy,
                     onEasy = vm::setEasyMode,
+                    onSeedDemo = { vm.seedDemoGuide() },
+                    onResetDemo = { vm.resetDemoSession() },
                     onDebug = { vm.go(Screen.Debug) },
                 )
             }
@@ -72,7 +74,7 @@ fun LibraryScreen(vm: TaskLensViewModel) {
             Spacer(Modifier.height(16.dp))
 
             if (guides.isEmpty()) {
-                Empty()
+                Empty(onSeedDemo = { vm.seedDemoGuide() })
             } else {
                 LazyColumn(
                     Modifier.weight(1f),
@@ -124,19 +126,9 @@ private fun GuideCard(g: Guide, bytes: Long, onOpen: () -> Unit, onDelete: () ->
             style = MaterialTheme.typography.bodyMedium,
             color = Ink.dim,
         )
-        Spacer(Modifier.height(2.dp))
-        // Says whether an expert has been through it, and nothing about how
-        // good it is. A draft is still worth opening; it just has nobody's name
-        // on it yet.
-        Text(
-            if (g.verified) "✓  verified by the expert" else "◦  draft - not checked yet",
-            Modifier
-                .glass(CircleShape, tone = 1.25f)
-                .padding(horizontal = 10.dp, vertical = 5.dp),
-            style = MaterialTheme.typography.labelMedium,
-            color = if (g.verified) Ink.green else Ink.amber,
-        )
-        Spacer(Modifier.height(2.dp))
+        Spacer(Modifier.height(4.dp))
+        VerificationBadge(g.verified)
+        Spacer(Modifier.height(4.dp))
         Row(
             Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -164,7 +156,13 @@ private fun GuideCard(g: Guide, bytes: Long, onOpen: () -> Unit, onDelete: () ->
 }
 
 @Composable
-private fun SettingsPanel(easy: Boolean, onEasy: (Boolean) -> Unit, onDebug: () -> Unit) {
+private fun SettingsPanel(
+    easy: Boolean,
+    onEasy: (Boolean) -> Unit,
+    onSeedDemo: () -> Unit,
+    onResetDemo: () -> Unit,
+    onDebug: () -> Unit,
+) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -196,13 +194,25 @@ private fun SettingsPanel(easy: Boolean, onEasy: (Boolean) -> Unit, onDebug: () 
                 ),
             )
         }
+        Spacer(Modifier.height(12.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            TextButton(onClick = onSeedDemo, modifier = Modifier.weight(1f)) {
+                Text("Seed Demo Guide", color = Ink.blue)
+            }
+            TextButton(onClick = onResetDemo, modifier = Modifier.weight(1f)) {
+                Text("Reset Demo", color = Ink.amber)
+            }
+        }
         TextButton(onClick = onDebug) { Text("Debug screen", color = Ink.dim) }
     }
 }
 
 @Composable
-private fun Empty() {
-    Column(Modifier.fillMaxWidth().padding(top = 64.dp)) {
+private fun Empty(onSeedDemo: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(top = 48.dp)) {
         Text("No jobs yet.", style = MaterialTheme.typography.titleLarge, color = Ink.text)
         Spacer(Modifier.height(8.dp))
         Text(
@@ -210,6 +220,8 @@ private fun Empty() {
             style = MaterialTheme.typography.bodyMedium,
             color = Ink.dim,
         )
+        Spacer(Modifier.height(16.dp))
+        GlassPill("Load Demo Guide (Laptop Disassembly)", onClick = onSeedDemo, color = Ink.blue)
     }
 }
 

@@ -23,6 +23,7 @@ data class DetectionBox(
     val top: Float,
     val right: Float,
     val bottom: Float,
+    val source: String = "detector",
 )
 
 /**
@@ -162,17 +163,23 @@ class ObjectDetectSource(
                 if (model.labels?.contains(name) == false) return@mapNotNull null
                 if (top.score() < model.minScore(name)) return@mapNotNull null
                 val r = det.boundingBox()
+                val l = (r.left / w).coerceIn(0f, 1f)
+                val t = (r.top / h).coerceIn(0f, 1f)
+                val rNorm = (r.right / w).coerceIn(0f, 1f)
+                val bNorm = (r.bottom / h).coerceIn(0f, 1f)
                 DetectionBox(
                     label = name,
                     score = top.score(),
-                    left = r.left / w,
-                    top = r.top / h,
-                    right = r.right / w,
-                    bottom = r.bottom / h,
+                    left = l,
+                    top = t,
+                    right = rNorm,
+                    bottom = bNorm,
+                    source = model.file.nameWithoutExtension,
                 )
             }
         }
-        return Detections(boxes, w / h)
+        val deduped = suppressDuplicates(boxes)
+        return Detections(deduped, w / h)
     }
 
     /**
@@ -315,3 +322,34 @@ const val DETECTOR_MODEL = "models/object_detector.tflite"
  * be on the phone at once -- which is the whole point.
  */
 const val DETECTOR_MODEL_COCO = "models/object_detector_coco.tflite"
+
+/** Suppress overlapping detections for the same class with high IoU. */
+internal fun suppressDuplicates(boxes: List<DetectionBox>, iouThreshold: Float = 0.65f): List<DetectionBox> {
+    if (boxes.size <= 1) return boxes
+    val sorted = boxes.sortedByDescending { it.score }
+    val selected = mutableListOf<DetectionBox>()
+    for (box in sorted) {
+        val duplicate = selected.any { existing ->
+            existing.label.equals(box.label, ignoreCase = true) && calculateIou(existing, box) > iouThreshold
+        }
+        if (!duplicate) {
+            selected += box
+        }
+    }
+    return selected
+}
+
+/** Calculate 2D bounding box Intersection over Union (IoU). */
+internal fun calculateIou(a: DetectionBox, b: DetectionBox): Float {
+    val interLeft = maxOf(a.left, b.left)
+    val interTop = maxOf(a.top, b.top)
+    val interRight = minOf(a.right, b.right)
+    val interBottom = minOf(a.bottom, b.bottom)
+    if (interRight <= interLeft || interBottom <= interTop) return 0f
+    val interArea = (interRight - interLeft) * (interBottom - interTop)
+    val areaA = (a.right - a.left) * (a.bottom - a.top)
+    val areaB = (b.right - b.left) * (b.bottom - b.top)
+    val unionArea = areaA + areaB - interArea
+    if (unionArea <= 0f) return 0f
+    return interArea / unionArea
+}

@@ -9,6 +9,7 @@ data class ModeInputs(
     val dbfs: Double = -60.0,
     val speechUnclear: Boolean = false,
     val userFar: Boolean = false,
+    val faceHeightPx: Double = 0.0,
 )
 
 data class ModeDecision(val mode: Mode, val reason: String)
@@ -45,6 +46,7 @@ class ModeEngine(private val policy: Policy = Policy.DEFAULT) {
 
     private val inHand = Schmitt(policy.inHandEnterVar, policy.inHandExitVar)
     private val roomLoud = Schmitt(policy.roomLoudEnterDb, policy.roomLoudExitDb)
+    private val userFarTrigger = Schmitt(policy.userFarEnterPx, policy.userFarExitPx)
 
     var mode: Mode = Mode.TAP
         private set
@@ -57,6 +59,7 @@ class ModeEngine(private val policy: Policy = Policy.DEFAULT) {
 
     val isInHand: Boolean get() = inHand.state
     val isRoomLoud: Boolean get() = roomLoud.state
+    val isUserFar: Boolean get() = userFarTrigger.state
 
     /**
      * @return true if this call committed a switch.
@@ -68,7 +71,15 @@ class ModeEngine(private val policy: Policy = Policy.DEFAULT) {
     fun update(nowMs: Long, inputs: ModeInputs): Boolean {
         val held = inHand.update(inputs.accelVariance)
         val loud = roomLoud.update(AdaptiveGate.sanitize(inputs.dbfs))
-        val candidate = decide(inputs, held, loud)
+        val far = if (inputs.faceHeightPx > 0.0) {
+            userFarTrigger.update(inputs.faceHeightPx)
+        } else {
+            if (!inputs.userFar) {
+                userFarTrigger.reset()
+            }
+            inputs.userFar
+        }
+        val candidate = decide(inputs, held, loud, far)
 
         if (candidate.mode == mode) {
             pending = null
@@ -89,7 +100,7 @@ class ModeEngine(private val policy: Policy = Policy.DEFAULT) {
     }
 
     /** First match wins. EASY over HANDS over TALK over TAP. */
-    private fun decide(i: ModeInputs, held: Boolean, loud: Boolean): ModeDecision = when {
+    private fun decide(i: ModeInputs, held: Boolean, loud: Boolean, far: Boolean): ModeDecision = when {
         i.easyMode ->
             ModeDecision(Mode.EASY, "EASY <- user setting")
         loud ->
@@ -98,7 +109,7 @@ class ModeEngine(private val policy: Policy = Policy.DEFAULT) {
             ModeDecision(Mode.HANDS, "HANDS <- speech was unclear")
         !held ->
             ModeDecision(Mode.TALK, "TALK <- phone is flat (var ${fmt(i.accelVariance)})")
-        i.userFar ->
+        far ->
             ModeDecision(Mode.TALK, "TALK <- user is far")
         else ->
             ModeDecision(Mode.TAP, "TAP <- held, quiet, close")

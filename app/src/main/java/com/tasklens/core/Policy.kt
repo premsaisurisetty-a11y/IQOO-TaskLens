@@ -40,15 +40,16 @@ data class Policy(
     /** How many of the most recent words that mean is taken over. */
     val speechUnclearWindowWords: Int = 12,
     /**
-     * A detected face shorter than this many pixels means the user is out of
+     * A detected person/face shorter than this many pixels means the user is out of
      * arm's reach, so TALK beats TAP.
-     *
-     * ponytail: nothing measures this yet -- it needs the MediaPipe face
-     * detector that lands with the gesture model. Until then userFar stays
-     * false, because a brightness or loudness proxy would be a guess, and this
-     * app does not guess at things it cannot honestly measure.
      */
     val userFarFaceHeightPx: Double = 90.0,
+    /** Lower threshold for Schmitt trigger (distance rising/size falling into FAR). */
+    val userFarEnterPx: Double = 80.0,
+    /** Upper threshold for Schmitt trigger (distance falling/size rising into NEAR). */
+    val userFarExitPx: Double = 100.0,
+    /** Confidence threshold for person detector used in distance estimation. */
+    val userFarMinConfidence: Float = 0.40f,
 
     // --- Object detection (the boxes over the viewfinder) ---
     /**
@@ -516,7 +517,22 @@ data class Policy(
      */
     val advanceOnMatchDwellMs: Long = 1500,
 
+    /** Minimum sliding window duration over which learner step evidence is aggregated. */
+    val stepCheckWindowMs: Long = 800,
+    /** Minimum discrete observations required before evaluating step completion. */
+    val stepCheckMinObservations: Int = 4,
+    /** Minimum consistency ratio (positive observations / total observations) required to PASS. */
+    val stepCheckRequiredConsistency: Double = 0.75,
+
     val sceneAdviseMinSimilarity: Float = 0.55f,
+
+    // --- Adaptive Interaction ---
+    /** Minimum duration between non-urgent spoken feedback to avoid repetitive speech. */
+    val speechCooldownMs: Long = 3000L,
+    /** Time on a step without evidence progress before considering learner potentially stuck. */
+    val stuckLearnerDurationMs: Long = 15000L,
+    /** Minimum interval between stuck retries while state remains unchanged. */
+    val stuckLearnerRetryIntervalMs: Long = 12000L,
 
     // --- Hand signs ---
     /** A pose must hold this long before it moves a step. Anti-flicker. */

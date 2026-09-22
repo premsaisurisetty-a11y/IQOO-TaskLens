@@ -58,6 +58,11 @@ import com.tasklens.capture.CameraController
 import com.tasklens.core.DwellLatch
 import com.tasklens.core.Mode
 import com.tasklens.core.StepCheck
+import com.tasklens.core.StepVerificationState
+import com.tasklens.core.StepVerificationReport
+import com.tasklens.core.StepProgressStatus
+import com.tasklens.core.LearnerStepProgress
+import com.tasklens.core.InteractionAction
 import com.tasklens.data.Guide
 import com.tasklens.data.Step
 import java.io.File
@@ -106,6 +111,9 @@ fun PlayerScreen(vm: TaskLensViewModel, guideId: String) {
     val listenLang by vm.listenLang.collectAsStateWithLifecycle()
     val translating by vm.translating.collectAsStateWithLifecycle()
     val mayAdvance by vm.mayAdvance.collectAsStateWithLifecycle()
+    val verificationReport by vm.stepVerificationReport.collectAsStateWithLifecycle()
+    val progressList by vm.learnerProgress.collectAsStateWithLifecycle()
+    val interactionDecision by vm.interactionDecision.collectAsStateWithLifecycle()
 
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var index by remember { mutableIntStateOf(0) }
@@ -128,27 +136,16 @@ fun PlayerScreen(vm: TaskLensViewModel, guideId: String) {
     val goal = remember(step.photo, guideId) { vm.guides.goalImage(guideId, step.photo) }
 
     fun goTo(i: Int) {
+        if (i > index) {
+            vm.skipCurrentStep(index)
+        }
         index = i.coerceIn(0, guide.steps.lastIndex)
         holding = false
     }
 
-    // The scene check compares the live camera to this step's photo. Told here
-    // rather than in the ViewModel because the Player is what knows which step
-    // a person is actually looking at.
-    LaunchedEffect(step.photo, step.objects, step.caption, cameraOn) {
-        // The step's own detector labels travel with the photograph, so the
-        // cascade compares like with like: what the detector saw then against
-        // what it sees now.
-        vm.watchScene(
-            if (cameraOn) goal else null,
-            // The counted list where the guide has one. Splitting the caption
-            // is the fallback for a guide written before it existed, and it
-            // loses the repeats -- so two screws read as one until
-            // refreshCaptions has been round.
-            step.objects.ifEmpty {
-                step.caption.split(",").map { it.trim() }.filter { it.isNotBlank() }
-            },
-        )
+    // The scene check and learner step verification engine watches the current step.
+    LaunchedEffect(step.photo, step.objects, step.caption, cameraOn, index) {
+        vm.watchStep(step, if (cameraOn) goal else null, guide.steps.size)
     }
     DisposableEffect(Unit) { onDispose { vm.watchScene(null) } }
 
@@ -267,7 +264,9 @@ fun PlayerScreen(vm: TaskLensViewModel, guideId: String) {
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-            Spacer(Modifier.height(22.dp))
+            Spacer(Modifier.height(18.dp))
+            DemoHud(guide, index, mode)
+            Spacer(Modifier.height(12.dp))
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -369,10 +368,74 @@ fun PlayerScreen(vm: TaskLensViewModel, guideId: String) {
                 modifier = Modifier.fillMaxWidth(),
             )
 
+            Spacer(Modifier.height(8.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ProvenancePill(step.instructionSource)
+                if (step.photo.isNotBlank() || step.caption.isNotBlank()) {
+                    Text(
+                        "▣ Visual: " + step.caption.ifBlank { "photo verified" },
+                        style = Mono,
+                        color = Ink.teal,
+                    )
+                } else {
+                    Text(
+                        "◦ Visual evidence unavailable",
+                        style = Mono,
+                        color = Ink.dim,
+                    )
+                }
+            }
+
             if (step.modeHint.isNotBlank()) {
                 Spacer(Modifier.height(8.dp))
                 Text(step.modeHint, color = Ink.amber, style = MaterialTheme.typography.bodySmall)
             }
+
+            if (interactionDecision.action != InteractionAction.SILENT) {
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .glass(GlassShapeSmall, tone = 1.15f)
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    val badgeColor = when (interactionDecision.action) {
+                        InteractionAction.WAIT_FOR_CAMERA -> Ink.amber
+                        InteractionAction.SHOW_WARNING -> Ink.red
+                        InteractionAction.REQUEST_CONFIRMATION -> Ink.teal
+                        InteractionAction.SPEAK_RETRY -> Ink.amber
+                        InteractionAction.ADVANCE_STEP -> Ink.green
+                        else -> Ink.teal
+                    }
+                    val badgeIcon = when (interactionDecision.action) {
+                        InteractionAction.WAIT_FOR_CAMERA -> "📷 "
+                        InteractionAction.SHOW_WARNING -> "⚠️ "
+                        InteractionAction.REQUEST_CONFIRMATION -> "✋ "
+                        InteractionAction.SPEAK_RETRY -> "💡 "
+                        InteractionAction.ADVANCE_STEP -> "✓ "
+                        else -> "◦ "
+                    }
+                    Text(
+                        text = "$badgeIcon${interactionDecision.visualGuidance ?: interactionDecision.reason}",
+                        color = badgeColor,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+            LearnerStepVerificationCard(
+                report = verificationReport,
+                progressList = progressList,
+                currentIndex = index,
+                totalSteps = guide.steps.size,
+                onConfirmManual = { vm.confirmCurrentStepManually() },
+            )
 
             Spacer(Modifier.weight(1f))
 
@@ -673,9 +736,7 @@ private fun ReasonBar(mode: Mode, reason: String) {
             ),
         )
         Spacer(Modifier.width(8.dp))
-        Text(mode.name, style = Mono, color = Ink.text)
-        Spacer(Modifier.width(8.dp))
-        Text(reason.substringAfter("<-").trim(), style = Mono, color = Ink.faint, maxLines = 1)
+        Text(explainModeReason(mode, reason), style = Mono, color = Ink.faint, maxLines = 1)
     }
 }
 
@@ -871,10 +932,10 @@ private fun AskSheet(
 
 /** What an answer rests on, in words a learner can act on. */
 private fun evidenceLabel(e: AnswerEvidence): String = when (e) {
-    AnswerEvidence.DIRECT_GUIDE_FACT -> "From this guide - the expert said this"
-    AnswerEvidence.VISUAL_FACT -> "From what the camera can actually see"
-    AnswerEvidence.GENERAL_KNOWLEDGE -> "General repair knowledge, not from this guide"
-    AnswerEvidence.UNCERTAIN -> "Not covered here - check before you rely on this"
+    AnswerEvidence.DIRECT_GUIDE_FACT -> "From expert transcript in this guide"
+    AnswerEvidence.VISUAL_FACT -> "Observed by camera on this phone"
+    AnswerEvidence.GENERAL_KNOWLEDGE -> "General repair knowledge (not verified by expert)"
+    AnswerEvidence.UNCERTAIN -> "I don't have enough verified information to answer that."
 }
 
 private fun evidenceColour(e: AnswerEvidence): Color = when (e) {
@@ -935,3 +996,112 @@ private const val MOVING_ON = "Great. Next step."
  * shows what it is about to try rather than hiding the choice.
  */
 private val LISTEN_NAMES = linkedMapOf("en" to "English", "hi" to "हिंदी")
+
+@Composable
+fun LearnerStepVerificationCard(
+    report: StepVerificationReport,
+    progressList: List<LearnerStepProgress>,
+    currentIndex: Int,
+    totalSteps: Int,
+    onConfirmManual: () -> Unit,
+) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0xFF141923))
+            .border(1.dp, Color(0xFF263345), RoundedCornerShape(12.dp))
+            .padding(12.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            // Header with step progress dots
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "STEP ${currentIndex + 1} OF $totalSteps",
+                    style = Mono,
+                    fontSize = 11.sp,
+                    color = Ink.dim,
+                )
+                // Progress indicators (Step 1 ✓, Step 2 ✓, Step 3 ●, Step 4 ○)
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    for (i in 0 until totalSteps) {
+                        val p = progressList.getOrNull(i)
+                        val symbol = when {
+                            p?.status == StepProgressStatus.VERIFIED_COMPLETE -> "✓"
+                            p?.status == StepProgressStatus.MANUAL_COMPLETE -> "✓"
+                            p?.status == StepProgressStatus.SKIPPED_UNVERIFIED -> "↷"
+                            i == currentIndex -> "●"
+                            else -> "○"
+                        }
+                        val color = when {
+                            p?.status == StepProgressStatus.VERIFIED_COMPLETE -> Ink.green
+                            p?.status == StepProgressStatus.MANUAL_COMPLETE -> Ink.teal
+                            p?.status == StepProgressStatus.SKIPPED_UNVERIFIED -> Ink.amber
+                            i == currentIndex -> Color(0xFFE5E7EB)
+                            else -> Ink.dim
+                        }
+                        Text(symbol, style = Mono, fontSize = 12.sp, color = color)
+                    }
+                }
+            }
+
+            // Status Badge and Title
+            val (statusText, statusColor, statusBg) = when (report.state) {
+                StepVerificationState.PASS -> Triple("STEP APPEARS COMPLETE", Ink.green, Color(0xFF0F3822))
+                StepVerificationState.CHECKING -> Triple("CHECKING EVIDENCE", Ink.teal, Color(0xFF122C38))
+                StepVerificationState.INSUFFICIENT_EVIDENCE -> Triple("MORE EVIDENCE NEEDED", Ink.teal, Color(0xFF1E2838))
+                StepVerificationState.CONFLICT -> Triple("EVIDENCE CONFLICTS", Ink.amber, Color(0xFF382C12))
+                StepVerificationState.MANUAL_CONFIRMATION -> Triple("MANUAL CONFIRMATION REQUIRED", Ink.teal, Color(0xFF1E2838))
+                StepVerificationState.UNKNOWN -> Triple("READY TO OBSERVE", Ink.dim, Color(0xFF18202A))
+            }
+
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(statusBg)
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        statusText,
+                        style = Mono,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = statusColor,
+                    )
+                }
+
+                if (report.state == StepVerificationState.MANUAL_CONFIRMATION || report.state != StepVerificationState.PASS) {
+                    Text(
+                        "Confirm Done",
+                        style = Mono,
+                        fontSize = 11.sp,
+                        color = Ink.teal,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color(0xFF1E293B))
+                            .clickable { onConfirmManual() }
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
+            }
+
+            // Plain explanation
+            Text(
+                report.explanation,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (report.state == StepVerificationState.PASS) Ink.green else Ink.dim,
+                fontSize = 12.sp,
+            )
+        }
+    }
+}
+

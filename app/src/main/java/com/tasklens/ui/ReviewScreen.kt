@@ -96,18 +96,19 @@ fun ReviewScreen(vm: TaskLensViewModel, guideId: String) {
                     Text("Name this job", color = Ink.faint, fontSize = 26.sp)
                 }
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
+            VerificationSummaryCard(g)
+            Spacer(Modifier.height(12.dp))
             Text(
                 if (g.verified) {
-                    "Verified. Any edit puts it back to a draft until you verify again."
+                    "✓ Verified Guide. Any edit puts it back to a draft until you verify again."
                 } else {
-                    "Draft. Name it, fix the steps, then verify - learners are given " +
-                        "the verified version."
+                    "◦ Draft Guide. Name it, review the steps, then verify — learners receive the verified version."
                 },
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (g.verified) Ink.green else Ink.dim,
+                color = if (g.verified) Ink.green else Ink.amber,
             )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
 
             LazyColumn(
                 Modifier.weight(1f),
@@ -186,6 +187,8 @@ private fun StepCard(
         Thumbnail(folder, step.photo)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
+            ProvenancePill(step.instructionSource)
+            Spacer(Modifier.height(6.dp))
             // The line a learner will read, and the expert's to correct. Typing
             // here writes Step.instruction and never the transcript: the
             // transcript is the record of what was said out loud and stays it.
